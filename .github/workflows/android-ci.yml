@@ -22,7 +22,5 @@ jobs:
       - name: Install Android SDK 36
         run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
       - uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '9.5.0'
       - name: Unit tests and debug build
-        run: gradle :app:testDebugUnitTest :app:assembleDebug --stacktrace
+        run: ./gradlew :app:testDebugUnitTest :app:assembleDebug --stacktrace
