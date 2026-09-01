@@ -1,7 +1,6 @@
 package com.treepolo.dailyfortune.data
 
 import android.content.Context
-import androidx.datastore.core.IOException
 import androidx.datastore.preferences.core.MutablePreferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.emptyPreferences
@@ -12,6 +11,7 @@ import com.treepolo.dailyfortune.model.FortuneDefinition
 import com.treepolo.dailyfortune.model.FortuneGrade
 import com.treepolo.dailyfortune.model.FortuneStats
 import com.treepolo.dailyfortune.model.PersistedFortuneState
+import java.io.IOException
 import java.time.LocalDate
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
