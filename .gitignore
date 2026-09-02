@@ -10,6 +10,7 @@
 app/build/
 *.jks
 *.keystore
+!debug.keystore
 keystore.properties
 .env
 .env.*

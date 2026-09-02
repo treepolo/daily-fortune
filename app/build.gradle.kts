@@ -15,7 +15,22 @@ android {
         versionName = "0.1.0"
     }
 
+    // Debug builds intentionally use one repository-scoped, non-production key so
+    // APKs produced by different GitHub Actions runners can update each other.
+    // Release signing must use a separate private upload/release key.
+    signingConfigs {
+        create("stableDebug") {
+            storeFile = rootProject.file("debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
+    }
+
     buildTypes {
+        debug {
+            signingConfig = signingConfigs.getByName("stableDebug")
+        }
         release {
             isMinifyEnabled = false
             proguardFiles(
