@@ -8,8 +8,6 @@ import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
-import com.treepolo.dailyfortune.model.DestinySnapshot
-import com.treepolo.dailyfortune.model.FortuneDomain
 import com.treepolo.dailyfortune.model.FortuneGrade
 import com.treepolo.dailyfortune.model.FortuneStats
 import com.treepolo.dailyfortune.model.PersistedFortuneState
@@ -36,7 +34,8 @@ class FortuneStore(private val context: Context) {
                 todayDate = preferences[Keys.todayDate],
                 selectedZodiac = preferences[Keys.selectedZodiac]
                     ?.let { runCatching { ZodiacSign.valueOf(it) }.getOrNull() },
-                todayPersonalDestiny = readSnapshot(preferences),
+                todayPersonalSkyDate = preferences[Keys.personalSkyDate]
+                    ?.let { runCatching { LocalDate.parse(it) }.getOrNull() },
                 todayRerollCount = preferences[Keys.todayRerollCount] ?: 0,
                 todaySeen = preferences[Keys.todaySeen] ?: false,
                 stats = FortuneStats(
@@ -76,7 +75,7 @@ class FortuneStore(private val context: Context) {
         }
     }
 
-    suspend fun reroll(today: LocalDate, destiny: DestinySnapshot, overallGrade: FortuneGrade) {
+    suspend fun reroll(today: LocalDate, sourceDate: LocalDate, overallGrade: FortuneGrade) {
         context.fortuneDataStore.edit { preferences ->
             normalizeDate(preferences, today)
             if (preferences[Keys.todaySeen] != true) return@edit
@@ -88,7 +87,8 @@ class FortuneStore(private val context: Context) {
                 preferences[Keys.maxDailyRerolls] ?: 0,
                 todayRerolls,
             )
-            writeSnapshot(preferences, destiny)
+            preferences[Keys.personalSkyDate] = sourceDate.toString()
+            clearLegacyFortuneSnapshot(preferences)
             recordDraw(preferences, overallGrade)
         }
     }
@@ -100,30 +100,17 @@ class FortuneStore(private val context: Context) {
         preferences[Keys.todayDate] = todayText
         preferences[Keys.todaySeen] = false
         preferences[Keys.todayRerollCount] = 0
-        clearSnapshot(preferences)
+        preferences.remove(Keys.personalSkyDate)
+        clearLegacyFortuneSnapshot(preferences)
     }
 
-    private fun readSnapshot(preferences: androidx.datastore.preferences.core.Preferences): DestinySnapshot? {
-        val overall = preferences[Keys.personalOverall] ?: return null
-        val domains = buildMap {
-            FortuneDomain.entries.forEach { domain ->
-                val value = preferences[Keys.domainKey(domain)] ?: return null
-                put(domain, value)
-            }
-        }
-        return DestinySnapshot(overall, domains)
-    }
-
-    private fun writeSnapshot(preferences: MutablePreferences, destiny: DestinySnapshot) {
-        preferences[Keys.personalOverall] = destiny.overallFortuneNumber
-        FortuneDomain.entries.forEach { domain ->
-            preferences[Keys.domainKey(domain)] = destiny.domainFortuneNumbers.getValue(domain)
-        }
-    }
-
-    private fun clearSnapshot(preferences: MutablePreferences) {
-        preferences.remove(Keys.personalOverall)
-        FortuneDomain.entries.forEach { domain -> preferences.remove(Keys.domainKey(domain)) }
+    private fun clearLegacyFortuneSnapshot(preferences: MutablePreferences) {
+        preferences.remove(Keys.legacyPersonalOverall)
+        preferences.remove(Keys.legacyWealth)
+        preferences.remove(Keys.legacyLove)
+        preferences.remove(Keys.legacyWorkStudy)
+        preferences.remove(Keys.legacyRelationships)
+        preferences.remove(Keys.legacyHealth)
     }
 
     private fun recordDraw(preferences: MutablePreferences, grade: FortuneGrade) {
@@ -143,7 +130,7 @@ class FortuneStore(private val context: Context) {
         val todayDate = stringPreferencesKey("today_date")
         val selectedZodiac = stringPreferencesKey("selected_zodiac")
         val todaySeen = booleanPreferencesKey("today_seen")
-        val personalOverall = intPreferencesKey("today_personal_overall")
+        val personalSkyDate = stringPreferencesKey("today_personal_sky_date")
         val todayRerollCount = intPreferencesKey("today_reroll_count")
         val totalRerolls = intPreferencesKey("total_rerolls")
         val totalDrawDays = intPreferencesKey("total_draw_days")
@@ -153,18 +140,12 @@ class FortuneStore(private val context: Context) {
         val nonXiongDraws = intPreferencesKey("non_xiong_draws")
         val daiXiongDraws = intPreferencesKey("dai_xiong_draws")
 
-        private val wealth = intPreferencesKey("today_personal_wealth")
-        private val love = intPreferencesKey("today_personal_love")
-        private val workStudy = intPreferencesKey("today_personal_work_study")
-        private val relationships = intPreferencesKey("today_personal_relationships")
-        private val health = intPreferencesKey("today_personal_health")
-
-        fun domainKey(domain: FortuneDomain) = when (domain) {
-            FortuneDomain.WEALTH -> wealth
-            FortuneDomain.LOVE -> love
-            FortuneDomain.WORK_STUDY -> workStudy
-            FortuneDomain.RELATIONSHIPS -> relationships
-            FortuneDomain.HEALTH -> health
-        }
+        // Keys from the retired ancient-fortune prototype. Kept only so upgrades can clean them.
+        val legacyPersonalOverall = intPreferencesKey("today_personal_overall")
+        val legacyWealth = intPreferencesKey("today_personal_wealth")
+        val legacyLove = intPreferencesKey("today_personal_love")
+        val legacyWorkStudy = intPreferencesKey("today_personal_work_study")
+        val legacyRelationships = intPreferencesKey("today_personal_relationships")
+        val legacyHealth = intPreferencesKey("today_personal_health")
     }
 }
