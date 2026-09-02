@@ -5,12 +5,12 @@ Differences from v3:
 - Overall remains a fixed arithmetic mean: 20% for each of the five domains.
 - The continuous astrology adjustment channels remain planet×domain, house×domain, aspect-type×domain.
 - DAI_JI and DAI_XIONG are fixed at 10% per displayed item.
-- The middle grade probabilities are no longer hard-coded. For each domain the search chooses
+- The middle grade probabilities are no longer hard-coded. For each displayed item the search chooses
   JI/XIONG rate g and XIAO_JI/XIAO_XIONG rate m; PING is the residual.
 - Exact distribution symmetry is enforced, together with PING > m > g > 10%.
 - Numeric score thresholds are empirical quantiles and may be different for every item.
 
-This removes the extra 10/13/17/20/17/13/10 restriction that v3 introduced beyond the user's request.
+No displayed item's middle-grade profile is fixed to 10/13/17/20/17/13/10.
 """
 
 from __future__ import annotations
@@ -26,6 +26,8 @@ import numpy as np
 import astrology_weight_search_v3 as base
 
 DOMAIN_COUNT = 5
+ITEM_COUNT = DOMAIN_COUNT + 1
+OVERALL_INDEX = DOMAIN_COUNT
 STAR_COUNT = base.PARAM_COUNT
 STAR_MIN = -0.49
 STAR_MAX = 4.00
@@ -37,9 +39,8 @@ PROFILE_M_MAX = 0.198
 CORE_TARGETS = np.array([0.10, 0.10, 0.075, 0.075], dtype=np.float64)
 CORE_SCALES = np.array([0.010, 0.010, 0.005, 0.005], dtype=np.float64)
 STAR_REGULARITY = 0.003
-DEFAULT_PROFILE = np.tile(np.array([0.13, 0.17], dtype=np.float64), (DOMAIN_COUNT, 1))
-# Overall's middle categories do not affect A/B/C/D; keep a clean valid symmetric display profile.
-OVERALL_PROFILE = np.array([0.13, 0.17], dtype=np.float64)
+# Search starting point only; all six displayed items, including overall, are free to move.
+DEFAULT_PROFILE = np.tile(np.array([0.13, 0.17], dtype=np.float64), (ITEM_COUNT, 1))
 
 
 @dataclass
@@ -118,7 +119,7 @@ def build_state(x: np.ndarray, stars: np.ndarray, profile: np.ndarray) -> Search
     scores = base.scores_from_params(x, stars)
     overall = scores.mean(axis=1)
     item_codes = np.column_stack([codes(scores[:, d], *profile[d]) for d in range(DOMAIN_COUNT)])
-    overall_codes = codes(overall, *OVERALL_PROFILE)
+    overall_codes = codes(overall, *profile[OVERALL_INDEX])
     dj = (item_codes == 6).sum(axis=1).astype(np.int8)
     dx = (item_codes == 0).sum(axis=1).astype(np.int8)
     neg = (item_codes <= 2).sum(axis=1).astype(np.int8)
@@ -148,7 +149,7 @@ def try_star(state: SearchState, x: np.ndarray, j: int, proposed: float):
     new_domain = state.scores[:, d] + feature * delta
     new_codes = codes(new_domain, *state.profile[d])
     new_overall = state.overall + feature * (delta / DOMAIN_COUNT)
-    new_overall_codes = codes(new_overall, *OVERALL_PROFILE)
+    new_overall_codes = codes(new_overall, *state.profile[OVERALL_INDEX])
 
     dj = state.dai_ji_count + (new_codes == 6).astype(np.int8) - (old_codes == 6).astype(np.int8)
     dx = state.dai_xiong_count + (new_codes == 0).astype(np.int8) - (old_codes == 0).astype(np.int8)
@@ -190,6 +191,21 @@ def try_profile(state: SearchState, d: int, component: int, proposed: float):
     new_pair[component] = proposed
     if not valid_profile(*new_pair):
         return None
+
+    if d == OVERALL_INDEX:
+        new_overall_codes = codes(state.overall, *new_pair)
+        probs = core_probs(
+            state.dai_ji_count,
+            state.dai_xiong_count,
+            state.negative_count,
+            state.positive_count,
+            state.ge_ping_count,
+            state.le_ping_count,
+            new_overall_codes,
+        )
+        obj = objective_value(probs, state.sumsq)
+        return (obj, new_pair, new_overall_codes, probs)
+
     old_codes = state.codes[:, d]
     new_codes = codes(state.scores[:, d], *new_pair)
     dj = state.dai_ji_count + (new_codes == 6).astype(np.int8) - (old_codes == 6).astype(np.int8)
@@ -204,6 +220,14 @@ def try_profile(state: SearchState, d: int, component: int, proposed: float):
 
 
 def accept_profile(state: SearchState, d: int, candidate) -> None:
+    if d == OVERALL_INDEX:
+        obj, new_pair, new_overall_codes, probs = candidate
+        state.profile[d] = new_pair
+        state.overall_codes = new_overall_codes
+        state.probs = probs
+        state.objective = float(obj)
+        return
+
     obj, new_pair, new_codes, dj, dx, neg, pos, ge, le, probs = candidate
     state.profile[d] = new_pair
     state.codes[:, d] = new_codes
@@ -250,7 +274,7 @@ def search(
                     if delta_obj <= 0 or rng.random() < math.exp(-delta_obj / max(temperature, 1e-9)):
                         accept_star(state, j, candidate)
             else:
-                d = int(rng.integers(DOMAIN_COUNT))
+                d = int(rng.integers(ITEM_COUNT))
                 component = int(rng.integers(2))
                 candidate = try_profile(state, d, component, state.profile[d, component] + rng.normal(0.0, profile_sigma))
                 if candidate is not None:
@@ -274,7 +298,7 @@ def search(
                     candidate_best = c
             if candidate_best is not None:
                 accept_star(state, int(j), candidate_best)
-        for d in rng.permutation(DOMAIN_COUNT):
+        for d in rng.permutation(ITEM_COUNT):
             for component in (0, 1):
                 candidate_best = None
                 for direction in (-1.0, 1.0):
@@ -316,9 +340,9 @@ def evaluate(
         rates_by_domain = None
     else:
         item_codes = np.column_stack([codes(scores[:, d], *profile[d]) for d in range(DOMAIN_COUNT)])
-        overall_codes = codes(overall, *OVERALL_PROFILE)
+        overall_codes = codes(overall, *profile[OVERALL_INDEX])
         domain_thresholds = np.vstack([thresholds(scores[:, d], *profile[d]) for d in range(DOMAIN_COUNT)])
-        overall_threshold_values = thresholds(overall, *OVERALL_PROFILE)
+        overall_threshold_values = thresholds(overall, *profile[OVERALL_INDEX])
         rates_by_domain = [profile_rates(*profile[d]) for d in range(DOMAIN_COUNT)]
 
     dj = (item_codes == 6).sum(axis=1)
@@ -367,7 +391,7 @@ def evaluate(
     if rates_by_domain is not None:
         for d, item in enumerate(base.DOMAINS):
             profile_map[item] = {grade: float(rates_by_domain[d][code]) for code, grade in enumerate(base.GRADES_LOW_TO_HIGH)}
-        overall_rates = profile_rates(*OVERALL_PROFILE)
+        overall_rates = profile_rates(*profile[OVERALL_INDEX])
         profile_map["總分"] = {grade: float(overall_rates[code]) for code, grade in enumerate(base.GRADES_LOW_TO_HIGH)}
 
     return {
@@ -407,13 +431,13 @@ def evaluate(
 def markdown(result: dict) -> str:
     pct = base.pct
     lines = [
-        "# 占星細粒度參數搜尋 v4（可變中間等級分布）",
+        "# 占星細粒度參數搜尋 v4（六項皆可變中間等級分布）",
         "",
         f"完整資料：{result['rows']:,} 筆（1900–2100 每日 × 12 星座）。",
         "",
-        "- 總分固定五細項各 20%，不可搜尋。",
+        "- 總分計算固定五細項各 20%，不可搜尋。",
         "- 大吉與大凶固定各約 10%。",
-        "- 每個細項的吉/凶、小吉/小凶、平比例可獨立搜尋，但強制左右對稱且 `平 > 小吉/小凶 > 吉/凶 > 大吉/大凶`。",
+        "- 五個細項與總分的吉/凶、小吉/小凶、平比例都可獨立搜尋；強制左右對稱且 `平 > 小吉/小凶 > 吉/凶 > 大吉/大凶`。",
         "- 六個實際分數切點依各項完整分數分布的分位數產生，因此不同項目可以有完全不同數值尺度。",
         "- 星象連續分數搜尋通道：行星×領域、宮位×領域、相位種類×領域；原始因子方向不翻轉。",
         "",
@@ -516,7 +540,7 @@ def main():
 
     zero_stars = np.zeros(STAR_COUNT, dtype=np.float64)
     production = evaluate(x, zero_stars, DEFAULT_PROFILE, "現行正式引擎（原門檻）", production_thresholds=True)
-    threshold_only = evaluate(x, zero_stars, DEFAULT_PROFILE, "只校準門檻、不改星象權重")
+    threshold_only = evaluate(x, zero_stars, DEFAULT_PROFILE, "只校準門檻、不改星象權重（搜尋起始配置）")
     result = {
         "rows": int(n),
         "targets": {"A": 0.10, "B": 0.10, "C": 0.075, "D": 0.075},
@@ -525,6 +549,7 @@ def main():
             "extreme_rate_each_side": EXTREME_RATE,
             "grade_symmetry": True,
             "ordering": "PING > XIAO_JI/XIAO_XIONG > JI/XIONG > DAI_JI/DAI_XIONG",
+            "middle_grade_profile_searchable_for_all_six_items": True,
             "star_bounds": [STAR_MIN, STAR_MAX],
             "factor_sign_reversal": False,
         },
