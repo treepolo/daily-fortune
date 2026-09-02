@@ -50,18 +50,25 @@ data class FortuneDefinition(
     val domains: Map<FortuneDomain, DomainFortune>,
 )
 
-/**
- * 一整包命運。綜合運勢與五個細項各自記錄其來源籤，因此細項可以和綜合運勢方向不同。
- */
+/** 私人「逆天改命」的一整包古籤結果。 */
 data class DestinySnapshot(
     val overallFortuneNumber: Int,
     val domainFortuneNumbers: Map<FortuneDomain, Int>,
 )
 
+enum class DestinySource {
+    PUBLIC_ASTROLOGY,
+    PERSONAL_FORTUNE,
+}
+
 data class ResolvedDestiny(
-    val snapshot: DestinySnapshot,
-    val overall: FortuneDefinition,
+    val source: DestinySource,
+    val overallGrade: FortuneGrade,
+    val overallExplanation: String,
     val domains: Map<FortuneDomain, DomainFortune>,
+    val snapshot: DestinySnapshot? = null,
+    val fortune: FortuneDefinition? = null,
+    val astrologyAudit: AstrologyAudit? = null,
 )
 
 data class FortuneStats(
