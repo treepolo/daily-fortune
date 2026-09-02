@@ -6,6 +6,7 @@ activityCompose = "1.13.0"
 lifecycle = "2.10.0"
 datastore = "1.2.1"
 composeBom = "2026.06.00"
+astronomy = "2.1.19"
 junit = "4.13.2"
 
 [libraries]
@@ -20,6 +21,7 @@ androidx-compose-ui = { module = "androidx.compose.ui:ui" }
 androidx-compose-ui-tooling = { module = "androidx.compose.ui:ui-tooling" }
 androidx-compose-ui-tooling-preview = { module = "androidx.compose.ui:ui-tooling-preview" }
 androidx-compose-material3 = { module = "androidx.compose.material3:material3" }
+astronomy-engine = { module = "com.github.cosinekitty:astronomy", version.ref = "astronomy" }
 junit = { module = "junit:junit", version.ref = "junit" }
 
 [plugins]

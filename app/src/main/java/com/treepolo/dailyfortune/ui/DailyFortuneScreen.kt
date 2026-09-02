@@ -17,7 +17,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -92,7 +91,7 @@ private fun DailyFortuneScreen(
                         fontWeight = FontWeight.Bold,
                     )
                     Text(
-                        text = "今日天命已定；不服可以逆天改命。",
+                        text = "今日天象已定；不服可以逆天改命。",
                         style = MaterialTheme.typography.bodyMedium,
                     )
                 }
@@ -129,7 +128,7 @@ private fun DailyFortuneScreen(
                 )
                 if (state.hasDefiedFate) {
                     Text(
-                        text = "跑馬燈中的 ${zodiac.label} 已替換成你的個人命運；其他十一星座仍是公共天命。",
+                        text = "跑馬燈中的 ${zodiac.label} 已替換成你的個人古籤命運；其他十一星座仍依今日實際天象計算。",
                         modifier = Modifier.padding(top = 8.dp),
                         style = MaterialTheme.typography.labelSmall,
                         textAlign = TextAlign.Center,
@@ -139,7 +138,7 @@ private fun DailyFortuneScreen(
 
             Spacer(modifier = Modifier.height(28.dp))
             Text(
-                text = "開發期公共天命目前由日期與星座固定產生；接入 Supabase 後改由中央伺服器每日產生並鎖定。",
+                text = "公共天命：Astronomy Engine 實際星曆 + Astrology Engine v1 固定規則；全程不使用亂數。逆天改命才使用安全亂數抽籤。",
                 style = MaterialTheme.typography.labelSmall,
                 textAlign = TextAlign.Center,
             )
@@ -235,9 +234,9 @@ private fun destinySegment(
     append(zodiac.label)
     if (isUser) append("・你")
     append("】總運勢 ")
-    append(destiny.overall.grade.label)
+    append(destiny.overallGrade.label)
     append("：")
-    append(destiny.overall.generalExplanation)
+    append(destiny.overallExplanation)
 
     FortuneDomain.entries.forEach { domain ->
         val result = destiny.domains.getValue(domain)
@@ -249,10 +248,12 @@ private fun destinySegment(
         append(result.explanation)
     }
 
-    append("　｜　第")
-    append(destiny.overall.number)
-    append("籤：")
-    append(destiny.overall.poem.joinToString("／"))
+    destiny.fortune?.let { fortune ->
+        append("　｜　改命籤第")
+        append(fortune.number)
+        append("籤：")
+        append(fortune.poem.joinToString("／"))
+    }
 }
 
 @Composable

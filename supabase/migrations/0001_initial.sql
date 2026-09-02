@@ -1,5 +1,6 @@
 -- Daily Fortune initial cloud schema.
--- Prepared before linking the Android client to a real Supabase project.
+-- This file has not yet been deployed to a Supabase project.
+-- Public zodiac fate is astrology-based; private rerolls are ancient-fortune draws.
 
 create extension if not exists pgcrypto;
 
@@ -24,26 +25,29 @@ create table public.profiles (
     )
 );
 
--- Exactly one immutable public destiny per date and zodiac sign.
--- Each domain stores the fortune source number used to resolve its grade + prewritten explanation.
+-- Exactly one immutable public astrology destiny per date + zodiac.
+-- Audit JSON preserves the astronomical inputs and every rule contribution used by the engine.
 create table public.daily_zodiac_destinies (
     fortune_date date not null,
     zodiac_sign text not null check (zodiac_sign in (
         'ARIES', 'TAURUS', 'GEMINI', 'CANCER', 'LEO', 'VIRGO',
         'LIBRA', 'SCORPIO', 'SAGITTARIUS', 'CAPRICORN', 'AQUARIUS', 'PISCES'
     )),
-    corpus_id text not null default 'guandi-100-v1',
-    overall_fortune_number smallint not null check (overall_fortune_number between 1 and 100),
-    wealth_fortune_number smallint not null check (wealth_fortune_number between 1 and 100),
-    love_fortune_number smallint not null check (love_fortune_number between 1 and 100),
-    work_study_fortune_number smallint not null check (work_study_fortune_number between 1 and 100),
-    relationships_fortune_number smallint not null check (relationships_fortune_number between 1 and 100),
-    health_fortune_number smallint not null check (health_fortune_number between 1 and 100),
+    engine_version text not null,
+    overall_grade text not null check (
+        overall_grade in ('DAI_JI', 'JI', 'XIAO_JI', 'PING', 'XIAO_XIONG', 'XIONG', 'DAI_XIONG')
+    ),
+    overall_score double precision not null,
+    domain_scores jsonb not null check (jsonb_typeof(domain_scores) = 'object'),
+    domain_grades jsonb not null check (jsonb_typeof(domain_grades) = 'object'),
+    explanations jsonb not null check (jsonb_typeof(explanations) = 'object'),
+    astronomy_snapshot jsonb not null check (jsonb_typeof(astronomy_snapshot) = 'object'),
+    astrology_factors jsonb not null check (jsonb_typeof(astrology_factors) = 'array'),
     generated_at timestamptz not null default now(),
     primary key (fortune_date, zodiac_sign)
 );
 
--- Personal rerolls only. The original daily public destiny is not duplicated here.
+-- Personal "逆天改命" ancient-fortune draws only.
 create table public.fortune_draws (
     id uuid primary key default gen_random_uuid(),
     user_id uuid not null references auth.users(id) on delete cascade,
@@ -109,6 +113,8 @@ create index fortune_draws_user_date_idx
     on public.fortune_draws (user_id, fortune_date, draw_index);
 create index fortune_bindings_user_created_idx
     on public.fortune_bindings (user_id, created_at desc);
+create index daily_zodiac_destinies_engine_idx
+    on public.daily_zodiac_destinies (engine_version, fortune_date desc);
 
 alter table public.profiles enable row level security;
 alter table public.daily_zodiac_destinies enable row level security;
@@ -124,8 +130,7 @@ create policy "profiles_update_own"
     using (auth.uid() = id)
     with check (auth.uid() = id);
 
--- Public zodiac destinies are readable to authenticated users, including Supabase anonymous users.
--- No client write policy is created: generation/update belongs to a trusted server-side path.
+-- Anonymous Supabase users use the authenticated role. No client write policy exists here.
 create policy "daily_zodiac_destinies_select_authenticated"
     on public.daily_zodiac_destinies for select
     to authenticated

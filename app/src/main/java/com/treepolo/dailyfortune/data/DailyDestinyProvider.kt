@@ -1,30 +1,51 @@
 package com.treepolo.dailyfortune.data
 
 import com.treepolo.dailyfortune.model.DestinySnapshot
+import com.treepolo.dailyfortune.model.DestinySource
 import com.treepolo.dailyfortune.model.FortuneDomain
 import com.treepolo.dailyfortune.model.ResolvedDestiny
 import com.treepolo.dailyfortune.model.ZodiacSign
+import java.security.SecureRandom
 import java.time.LocalDate
-import kotlin.random.Random
 
 /**
- * 開發期的公共天命提供者。
- *
- * 在 Supabase 接入前，用「日期 + 星座」固定種子產生公共結果，因此同一天、同版本的客戶端
- * 會得到相同的十二星座天命。正式版會改成由中央伺服器每天產生並鎖定十二筆資料；介面與
- * DestinySnapshot 模型維持不變。
+ * Public fate is calculated from actual astronomy + Astrology Engine v1 with no random input.
+ * Personal "逆天改命" is a separate true-random ancient-fortune draw.
  */
 object DailyDestinyProvider {
-    fun publicDestinies(date: LocalDate): Map<ZodiacSign, ResolvedDestiny> =
-        ZodiacSign.entries.associateWith { zodiac -> publicDestiny(date, zodiac) }
+    private val secureRandom = SecureRandom()
+    @Volatile private var cachedDate: LocalDate? = null
+    @Volatile private var cachedPublic: Map<ZodiacSign, ResolvedDestiny>? = null
 
-    fun publicDestiny(date: LocalDate, zodiac: ZodiacSign): ResolvedDestiny {
-        val seed = (date.toEpochDay() * 1009L + zodiac.ordinal * 7919L).hashCode()
-        return resolve(generateSnapshot(Random(seed)))
+    fun publicDestinies(date: LocalDate): Map<ZodiacSign, ResolvedDestiny> {
+        if (cachedDate == date) cachedPublic?.let { return it }
+        return synchronized(this) {
+            if (cachedDate == date) {
+                cachedPublic ?: calculatePublic(date)
+            } else {
+                calculatePublic(date)
+            }.also {
+                cachedDate = date
+                cachedPublic = it
+            }
+        }
     }
 
-    fun personalReroll(random: Random = Random.Default): ResolvedDestiny =
-        resolve(generateSnapshot(random))
+    fun publicDestiny(date: LocalDate, zodiac: ZodiacSign): ResolvedDestiny =
+        publicDestinies(date).getValue(zodiac)
+
+    private fun calculatePublic(date: LocalDate): Map<ZodiacSign, ResolvedDestiny> =
+        AstrologyEngine.calculateDay(date).mapValues { (_, destiny) ->
+            ResolvedDestiny(
+                source = DestinySource.PUBLIC_ASTROLOGY,
+                overallGrade = destiny.overallGrade,
+                overallExplanation = destiny.overallExplanation,
+                domains = destiny.domains,
+                astrologyAudit = destiny.audit,
+            )
+        }
+
+    fun personalReroll(): ResolvedDestiny = resolve(generatePersonalSnapshot())
 
     fun resolve(snapshot: DestinySnapshot): ResolvedDestiny {
         val overall = requireNotNull(FortuneCatalog.byNumber(snapshot.overallFortuneNumber)) {
@@ -39,23 +60,24 @@ object DailyDestinyProvider {
             }
             source.domains.getValue(domain)
         }
-        return ResolvedDestiny(snapshot, overall, domains)
-    }
-
-    private fun generateSnapshot(random: Random): DestinySnapshot {
-        val overall = FortuneCatalog.random(random)
-        val domainNumbers = FortuneDomain.entries.associateWith {
-            // 多數細項承接整體籤的氣勢，但保留足夠機率從其他籤取得該領域結果。
-            // 因此整體大吉仍可能出現凶細項，整體大凶也可能存在吉細項。
-            if (random.nextInt(100) < 70) {
-                overall.number
-            } else {
-                FortuneCatalog.random(random).number
-            }
-        }
-        return DestinySnapshot(
-            overallFortuneNumber = overall.number,
-            domainFortuneNumbers = domainNumbers,
+        return ResolvedDestiny(
+            source = DestinySource.PERSONAL_FORTUNE,
+            overallGrade = overall.grade,
+            overallExplanation = overall.generalExplanation,
+            domains = domains,
+            snapshot = snapshot,
+            fortune = overall,
         )
     }
+
+    private fun generatePersonalSnapshot(): DestinySnapshot {
+        val overall = secureFortuneNumber()
+        val domainNumbers = FortuneDomain.entries.associateWith {
+            if (secureRandom.nextInt(100) < 70) overall else secureFortuneNumber()
+        }
+        return DestinySnapshot(overall, domainNumbers)
+    }
+
+    private fun secureFortuneNumber(): Int =
+        FortuneCatalog.fortunes[secureRandom.nextInt(FortuneCatalog.fortunes.size)].number
 }

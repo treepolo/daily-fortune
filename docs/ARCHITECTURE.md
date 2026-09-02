@@ -1,86 +1,154 @@
 # 技術架構
 
-## 1. 原則
+## 1. 核心原則
 
-1. **公共天命由伺服器權威且隨機決定**：正式版每天以 `Asia/Taipei` 換日，中央端使用真正的隨機抽取產生並鎖定十二星座完整公共天命；客戶端只讀取與快取。正式流程禁止以日期、星座、使用者資料或其他可預先計算的決定性種子推導天命。
-2. **離線優先顯示**：已下載的今日公共天命、自己的目前命運與統計不能因暫時斷網而消失。若裝置尚未取得當日公共天命且後端不可用，顯示暫時無法取得，不得自行用固定種子產生替代結果。
-3. **公共世界線與私人分支分離**：逆天改命只建立／更新自己的私人命運，不覆寫公共天命。
-4. **事件可追溯**：每次逆天改命保留事件；目前有效命運可以改變，但歷史事件不刪除。
-5. **帳號主體先定義**：雲端使用 `user_id` 分區，星座與私人命運都綁帳號。
+1. **公共天命由真實天文資料決定**：正式公共十二星座結果不含亂數；Astronomy Engine → Astrology Engine versioned rules → scores/grades/explanations。
+2. **公共世界線與私人改命分離**：公共結果是占星；私人「逆天改命」是 `SecureRandom` 古籤抽取。
+3. **全部可追溯**：公共結果保存天文 snapshot、成立因素、每項分數與引擎版本；私人抽籤保存每次 draw event。
+4. **正式中央權威**：Supabase 接入後，中央端每日生成一次並鎖定 12 筆公共天命；客戶端只讀與快取。
+5. **離線優先顯示**：已下載公共天命與私人目前結果斷網仍可看；沒有今日快取時不得自行用種子補算正式結果。
 6. **免費服務優先**：第一階段不得依賴必要固定月費服務。
-7. **不把敏感金鑰寫入 Repo**：服務角色金鑰絕不進 App。
+7. **敏感金鑰不進 Repo**：服務角色金鑰、正式簽章金鑰禁止提交。
 
-## 2. Android
-
-### 目前原型
+## 2. Android 現況
 
 - Kotlin + Jetpack Compose。
-- `Preferences DataStore` 暫存星座、今日私人改命結果、當日改命次數與彙總統計。
-- 首次使用先選星座。
-- 首頁使用單行跑馬燈依固定十二星座順序循環播報完整命運。
-- 每次進入首頁，起始星座會讓使用者在自己的星座出現前至少等待 2 個、最多 11 個星座。
-- 如果使用者已逆天改命，首頁跑馬燈只把自己的星座替換成私人結果；其餘十一星座仍使用公共結果。
+- Astronomy Engine 2.1.19（MIT）直接在程式內計算星曆，不需 API key。
+- `AstrologyEngine` 已用實際星曆建立公共十二星座原型。
+- `Preferences DataStore` 暫存星座、今日私人改命、改命次數與彙總統計。
+- 首頁單行跑馬燈；固定十二星座循環，自己的星座第一次出現前等待 2–11 星座。
+- `DailyDestinyProvider` 將兩種來源統一成 `ResolvedDestiny`：
+  - `PUBLIC_ASTROLOGY`
+  - `PERSONAL_FORTUNE`
 
-Supabase 尚未接入前，`DailyDestinyProvider` 暫時以「日期 + 星座」固定種子模擬公共天命。**這只允許存在於開發原型。接入 Supabase 後，正式執行路徑必須移除固定種子產生器，不得保留為 fallback 或離線補算機制。** 正式版只接受 `daily_zodiac_destinies` 的伺服器權威結果。
+舊「日期＋星座固定種子」公共天命路徑已淘汰，不得重新引入。
 
-### 接 Supabase 前
+## 3. Astrology Engine v1
 
-加入 Room／SQLite，至少保存：
+完整規格：`docs/ASTROLOGY_ENGINE_V1.md`。
 
-- `local_public_destinies`：今日十二星座公共天命快取。
-- `local_fortune_draws`：每次私人逆天改命事件。
-- `local_daily_fortunes`：每日公共起點、目前私人覆寫與改命次數。
-- `local_bindings`：未來綁籤事件與 20 字留言。
+### 天文層
 
-每筆待同步私人事件使用本機 UUID，雲端以 `(user_id, local_id)` 去重。DataStore 最終只保留小型設定、待生效星座與同步游標。
+`AstronomyEphemeris`：
 
-## 3. 命運資料模型
+- `Asia/Taipei` 完整曆日。
+- 15 分鐘取樣，97 個端點樣本。
+- 10 個主要天體地心真黃道黃經。
+- 日內星座占比。
+- 六小時尺度順／逆行判斷。
+- 換座。
+- 合、六合、刑、拱、對分五主要相位的當日最近樣本與實際容許度。
 
-一套 `DestinySnapshot` 包含：
+### 規則層
 
-- 一個綜合運勢來源籤。
-- 財運來源籤。
-- 戀愛來源籤。
-- 工作／學業來源籤。
-- 人際來源籤。
-- 健康來源籤。
+`AstrologyEngine`：
 
-五個細項不必與綜合使用同一支籤，因此可以出現「整體大吉、戀愛大凶」或反方向組合。產生器會提高細項與綜合方向相近的機率，但保留反方向長尾。
+- 太陽星座整宮制。
+- 行星領域權重。
+- 宮位領域權重。
+- 行星落宮。
+- 星座級行運對太陽星座關係。
+- 天體彼此主要相位。
+- 逆行／接近停滯。
+- 傳統七曜尊貴倍率。
+- 五領域分數 → 吉凶。
+- 五領域算術平均 → 綜合。
+- 詳情只能從實際 `AstrologyFactor` 生成。
 
-籤文與解說屬於版本化靜態語料；命運快照保存來源籤編號與語料版本，即可穩定還原當日完整文字。
+### Audit
 
-## 4. Supabase
+`AstrologyAudit` 保存：
+
+- `engineVersion`
+- 日期、星座
+- `AstronomyDayData`
+- 全部 `AstrologyFactor`
+- 每個 factor 對五領域的實際貢獻
+- 五領域分數
+- 綜合分數
+
+所以任何一個「今天為何是凶」都能往回查到實際天體位置與規則。
+
+## 4. 私人逆天改命
+
+私人改命仍使用公有領域古籤：
+
+1. `SecureRandom` 抽綜合古籤。
+2. 五個領域各自以 70% 沿用綜合籤來源、30% 再用 `SecureRandom` 從完整籤池抽來源。
+3. 所有抽取採放回。
+4. 完整 100 籤前，目前只以少量已校對籤驗證流程。
+
+這個 70/30 是「私人古籤命運」模型，不參與公共占星。
+
+## 5. 接 Supabase 前的 Room 層
+
+DataStore 最終只留小型設定／同步游標。Room／SQLite 至少建立：
+
+- `local_public_destinies`：中央公共天命快取，含 engine version 與必要 audit。
+- `local_fortune_draws`：私人每次改命 event。
+- `local_daily_fortunes`：每日星座、目前私人覆寫、改命次數。
+- `local_bindings`：綁籤與 20 字留言。
+
+每個私人待同步事件使用 UUID；後端以 `(user_id, local_id)` 去重。
+
+## 6. Supabase 正式架構
 
 使用 Supabase Authentication + PostgreSQL。
 
-### 帳號
+### Auth
 
-1. 首次使用直接建立匿名 Supabase 使用者，不設傳統註冊牆。
-2. 雲端資料全部使用 `auth.users.id` 作為 `user_id`。
-3. `profiles` 保存目前星座；星座變更另存待生效值與生效日期，避免當日換星座逃離天命。
-4. 日後綁定 Google 等正式登入方式時保留同一使用者資料主體。
+- 首次使用匿名帳號。
+- `auth.users.id` 為雲端使用者主體。
+- `profiles` 保存目前星座、待生效星座、待生效日期。
+- 日後綁 Google 等正式登入時保留同一資料主體。
 
-### 公共天命
-
-`daily_zodiac_destinies` 每日固定 12 筆，以 `(fortune_date, zodiac_sign)` 為主鍵。每筆保存完整 `DestinySnapshot` 的六個來源籤編號與語料版本。
+### 每日公共生成
 
 正式流程：
 
-1. `Asia/Taipei` 新曆日開始。
-2. 伺服器端以真正的隨機抽取產生十二星座完整天命；不得由日期或星座名稱決定結果。
-3. 以單一交易寫入 12 筆，當日不可被一般客戶端修改。
-4. 所有使用者讀取相同公共資料。
-5. 客戶端快取今日 12 筆供離線顯示。
+1. `Asia/Taipei` 新曆日。
+2. 可信任中央函式使用與 `astrology-v1.0.0` 等價的規則取得當日真實星曆並計算 12 星座。
+3. 以單一交易／具唯一鍵保護的流程寫入 12 筆。
+4. 寫入後當日不可被一般客戶端修改。
+5. 重試必須讀回既有資料，不得讓同一天重新生成不同公共天命。
+6. Android 下載 12 筆並快取。
 
-排程機制在建立實際 Supabase 專案時決定；可使用 Supabase 可用的排程能力，或用具互斥／唯一鍵保護的伺服器函式惰性建立。無論採哪一種觸發方式，**隨機抽取只在伺服器端發生一次，資料庫中的十二筆為當日唯一權威結果**；重試只能讀回既有資料，不能重新抽取造成同一天結果改變。
+若中央端使用 TypeScript／Deno，必須以 golden fixtures 驗證與 Kotlin v1 規則等價；任何規則改動都升 engine version。
+
+### 公共資料表
+
+`daily_zodiac_destinies` 不再保存古籤號。它保存：
+
+- engine version
+- overall grade/score
+- 五領域 scores/grades
+- explanations
+- astronomy snapshot
+- astrology factors
+- generated_at
+
+### 私人資料
+
+`fortune_draws` 只保存古籤私人改命事件；`daily_fortunes.current_personal_draw_id` 指向當日目前私人分支。公共天命永不被私人 draw 覆寫。
+
+## 7. 同步與衝突
+
+### 公共讀取
+
+1. 先顯示本機今日快取。
+2. 有網路時校對 Supabase `(date, 12 zodiac)`。
+3. 伺服器資料是權威。
+4. 無快取＋伺服器不可用：顯示暫時無法取得。
 
 ### 私人改命
 
-- `fortune_draws`：每次逆天改命一筆，保存完整私人 `DestinySnapshot`。
-- `daily_fortunes`：記錄使用者當日星座、公共天命起點、目前私人 draw（尚未改命時為空）及改命次數。
-- 公共天命永遠不因私人 draw 而覆寫。
+正式版由後端交易／RPC 決定 draw index、結果與目前 draw，避免兩台裝置同時改命造成競爭。客戶端不得自行宣布一筆私人 draw 為伺服器權威結果。
 
-### 資料表
+## 8. Supabase Schema
+
+尚未部署的初始 migration：`supabase/migrations/0001_initial.sql`。
+
+主要表：
 
 - `profiles`
 - `daily_zodiac_destinies`
@@ -88,54 +156,42 @@ Supabase 尚未接入前，`DailyDestinyProvider` 暫時以「日期 + 星座」
 - `daily_fortunes`
 - `fortune_bindings`
 
-初始 migration 位於 `supabase/migrations/0001_initial.sql`。
+RLS：
 
-## 5. 同步與衝突
+- 公共天命：authenticated 可讀，客戶端無 write policy。
+- profiles／draws／daily state／私人 bindings：限本人。
 
-### 讀取
+## 9. 完整 100 籤
 
-1. 先顯示本機已快取的今日公共天命。
-2. 連線後向 Supabase 校對 `(date, 12 zodiac)` 權威資料。
-3. 若伺服器已有今日資料，以伺服器結果更新快取。
-4. 若本機沒有今日快取且後端無法連線，等待伺服器恢復；禁止本機補算天命。
+古籤只服務私人改命。版本化靜態資料至少含：
 
-### 逆天改命
+- `corpus_id`
+- `fortune_number`
+- 原始級別與原文
+- 正規化級別
+- 五領域級別與自行撰寫解說
+- 來源頁面與校對狀態
 
-正式版由後端交易／RPC 決定私人新命運與 draw index，避免兩台裝置同時改命造成次數或目前結果互相覆蓋。客戶端不得自行宣告某次改命為伺服器權威結果。
+完成前自動檢查 1–100 完整、編號唯一、每支四句、五領域齊全、吉凶合法。
 
-同一帳號兩台裝置同日操作時，伺服器序列為準；歷史 draw 全部保留。
+## 10. 安全與授權
 
-## 6. 籤文資料
+- Astronomy Engine：MIT；第三方聲明見 `THIRD_PARTY_NOTICES.md`。
+- JPL Horizons：只用於驗證，不是 runtime dependency。
+- 公共運勢應在商店／適當位置明示娛樂用途，占星結論不宣稱科學預測效力。
+- 正式 Release key 與 Supabase service role key 絕不進 Repo。
 
-籤文是版本化靜態資料，與使用者資料分離：
+## 11. CI
 
-- `corpus_id`，例如 `guandi-100-v1`。
-- `fortune_number`。
-- 古籍原始級別與原文。
-- 正規化級別。
-- 五領域級別與本專案重新撰寫的解說。
-- 來源頁面與校對狀態。
+GitHub Actions：JDK 17、Android SDK 36、Gradle wrapper，執行 unit tests + Debug APK build；成功後上傳 Debug APK artifact。Debug build 使用固定的非正式測試簽章，方便實機覆蓋更新。
 
-完整 100 籤匯入前建立自動檢查：編號唯一、1–100 完整、每支四句、五領域皆存在、吉凶值合法。
+## 12. 接下來順序
 
-## 7. 安全與資料權限
-
-- `daily_zodiac_destinies`：登入／匿名登入使用者可讀，客戶端無新增、修改、刪除權。
-- `profiles`、`fortune_draws`、`daily_fortunes`、私人 `fortune_bindings`：Row Level Security 限本人。
-- 第一版不允許任意讀取其他人的 20 字留言。
-- 未來公共籤架使用專用公開介面與內容管理流程，不直接開放私人資料表。
-
-## 8. CI
-
-GitHub Actions 使用 JDK 17、Gradle 9.5.0、Android SDK 36，執行單元測試與 Debug APK build，成功後上傳 Debug APK artifact。
-
-## 9. 後續順序
-
-1. 實機驗證星座選擇、跑馬燈、2～11 星座等待與私人改命替換。
-2. 匯入、校對完整 100 籤與解說。
-3. 加入 Room／SQLite 公共快取與事件歷史。
-4. 建立 Supabase 專案並套用 migration。
-5. 把本機固定種子公共天命完整替換成伺服器每日真正隨機抽取的十二星座資料，並移除固定種子正式執行路徑。
-6. 接匿名登入、跨裝置同步、星座隔日變更。
-7. 接正式帳號綁定、資料復原與帳號刪除。
-8. 再做綁凶籤私人版本；公開留言與廣告另案處理。
+1. Astrology Engine v1 實機／CI 驗證完成。
+2. Room／SQLite 正式事件與快取層。
+3. 建立 Supabase Free 專案並套 migration。
+4. 建立中央 Astrology Engine v1 等價生成器、每日 12 筆鎖定與 audit 保存。
+5. 匿名登入、同步、星座隔日變更。
+6. 完整 100 籤與私人改命內容。
+7. 公共命盤、私人綁凶籤。
+8. 帳號綁定／刪除、隱私、AAB 與 Play Internal Testing／正式上架。
