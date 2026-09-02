@@ -22,7 +22,7 @@ import kotlin.math.max
  * position/motion/aspect recorded in [AstronomyDayData] and an explicit rule below.
  */
 object AstrologyEngine {
-    const val version = "astrology-v1.0.0"
+    const val version = "astrology-v1.1.0"
     private val taipei = ZoneId.of("Asia/Taipei")
     private val timeFormat = DateTimeFormatter.ofPattern("HH:mm")
 
@@ -40,7 +40,7 @@ object AstrologyEngine {
         val domains = FortuneDomain.entries.associateWith { domain ->
             val score = scores.getValue(domain)
             DomainFortune(
-                grade = grade(score),
+                grade = grade(score, domain),
                 explanation = domainExplanation(domain, score, factors),
             )
         }
@@ -77,7 +77,9 @@ object AstrologyEngine {
                         evidence = "${summary.body.label}於今日約 ${(fraction * 100).toInt()}% 時間位於${sign.label}（太陽星座整宮制第${house}宮）",
                         contributions = houseContributions,
                     ),
-                )
+                ) { domain ->
+                    AstrologyCalibrationV4.houseFactorMultiplier(summary.body, house, domain)
+                }
 
                 val relation = signRelation(zodiac, sign)
                 if (relation != null) {
@@ -92,7 +94,9 @@ object AstrologyEngine {
                             evidence = "${summary.body.label}位於${sign.label}，以${zodiac.label}為太陽星座時形成星座級${relation.label}；不假設出生太陽的精確度數",
                             contributions = relationContributions,
                         ),
-                    )
+                    ) { domain ->
+                        AstrologyCalibrationV4.bodyMultiplier(summary.body, domain)
+                    }
                 }
             }
 
@@ -114,7 +118,9 @@ object AstrologyEngine {
                         },
                         contributions = contributions,
                     ),
-                )
+                ) { domain ->
+                    AstrologyCalibrationV4.bodyMultiplier(summary.body, domain)
+                }
             }
         }
 
@@ -143,21 +149,40 @@ object AstrologyEngine {
                     evidence = "最近於 ${hit.closestTime.atZone(taipei).format(timeFormat)}，與${hit.aspect.angle.toInt()}°相差 ${formatOrb(hit.orbDegrees)}°；分別落第${houseA}、${houseB}宮",
                     contributions = contributions,
                 ),
+            ) { domain ->
+                AstrologyCalibrationV4.aspectFactorMultiplier(hit.first, hit.second, hit.aspect, domain)
+            }
+        }
+    }
+
+    private fun MutableList<AstrologyFactor>.addIfMeaningful(
+        factor: AstrologyFactor,
+        multiplier: (FortuneDomain) -> Double = { 1.0 },
+    ) {
+        if (factor.contributions.values.any { abs(it) >= 0.01 }) {
+            add(
+                factor.copy(
+                    contributions = factor.contributions.mapValues { (domain, value) ->
+                        value * multiplier(domain)
+                    },
+                ),
             )
         }
     }
 
-    private fun MutableList<AstrologyFactor>.addIfMeaningful(factor: AstrologyFactor) {
-        if (factor.contributions.values.any { abs(it) >= 0.01 }) add(factor)
-    }
+    fun grade(score: Double): FortuneGrade =
+        gradeWithThresholds(score, AstrologyCalibrationV4.overallGradeThresholds)
 
-    fun grade(score: Double): FortuneGrade = when {
-        score >= 10.0 -> FortuneGrade.DAI_JI
-        score >= 5.5 -> FortuneGrade.JI
-        score >= 1.8 -> FortuneGrade.XIAO_JI
-        score > -1.8 -> FortuneGrade.PING
-        score > -5.5 -> FortuneGrade.XIAO_XIONG
-        score > -10.0 -> FortuneGrade.XIONG
+    private fun grade(score: Double, domain: FortuneDomain): FortuneGrade =
+        gradeWithThresholds(score, AstrologyCalibrationV4.domainGradeThresholds.getValue(domain))
+
+    private fun gradeWithThresholds(score: Double, thresholds: DoubleArray): FortuneGrade = when {
+        score >= thresholds[5] -> FortuneGrade.DAI_JI
+        score >= thresholds[4] -> FortuneGrade.JI
+        score >= thresholds[3] -> FortuneGrade.XIAO_JI
+        score >= thresholds[2] -> FortuneGrade.PING
+        score >= thresholds[1] -> FortuneGrade.XIAO_XIONG
+        score >= thresholds[0] -> FortuneGrade.XIONG
         else -> FortuneGrade.DAI_XIONG
     }
 
@@ -170,7 +195,7 @@ object AstrologyEngine {
         val positive = ranked.filter { it.second > 0.05 }.maxByOrNull { it.second }
         val negative = ranked.filter { it.second < -0.05 }.minByOrNull { it.second }
         return buildString {
-            append("${grade(score).label}（${formatScore(score)}分）。")
+            append("${grade(score, domain).label}（${formatScore(score)}分）。")
             when {
                 positive != null && negative != null -> append("${positive.first.title}是主要加分；${negative.first.title}形成主要壓力。")
                 positive != null -> append("主要正向來源是${positive.first.title}。")
