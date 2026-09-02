@@ -1,6 +1,5 @@
 -- Daily Fortune initial cloud schema.
--- This migration is intentionally written before the first real Supabase deployment.
--- Both public fate and private rerolls are astrology-based; the retired ancient-fortune model is gone.
+-- Not yet deployed. Public and private destinies both use real astronomy + versioned astrology.
 
 create extension if not exists pgcrypto;
 
@@ -25,6 +24,15 @@ create table public.profiles (
     )
 );
 
+-- A real 24-hour sky is stored once and can be referenced by all 12 public signs or by rerolls.
+create table public.astronomy_snapshots (
+    sky_date date not null,
+    ephemeris_version text not null,
+    snapshot jsonb not null check (jsonb_typeof(snapshot) = 'object'),
+    created_at timestamptz not null default now(),
+    primary key (sky_date, ephemeris_version)
+);
+
 -- One immutable, server-authoritative public astrology destiny per date + zodiac.
 create table public.daily_zodiac_destinies (
     fortune_date date not null,
@@ -33,6 +41,8 @@ create table public.daily_zodiac_destinies (
         'LIBRA', 'SCORPIO', 'SAGITTARIUS', 'CAPRICORN', 'AQUARIUS', 'PISCES'
     )),
     engine_version text not null,
+    ephemeris_version text not null,
+    astronomy_source_date date not null,
     overall_grade text not null check (
         overall_grade in ('DAI_JI', 'JI', 'XIAO_JI', 'PING', 'XIAO_XIONG', 'XIONG', 'DAI_XIONG')
     ),
@@ -40,14 +50,15 @@ create table public.daily_zodiac_destinies (
     domain_scores jsonb not null check (jsonb_typeof(domain_scores) = 'object'),
     domain_grades jsonb not null check (jsonb_typeof(domain_grades) = 'object'),
     explanations jsonb not null check (jsonb_typeof(explanations) = 'object'),
-    astronomy_snapshot jsonb not null check (jsonb_typeof(astronomy_snapshot) = 'object'),
     astrology_factors jsonb not null check (jsonb_typeof(astrology_factors) = 'array'),
     generated_at timestamptz not null default now(),
-    primary key (fortune_date, zodiac_sign)
+    primary key (fortune_date, zodiac_sign),
+    foreign key (astronomy_source_date, ephemeris_version)
+        references public.astronomy_snapshots(sky_date, ephemeris_version)
+        on delete restrict
 );
 
--- Every private "逆天改命" result is another real 24-hour sky, selected by secure server randomness,
--- then evaluated by the same versioned Astrology Engine.
+-- Every private reroll points at another real 24-hour sky chosen with secure server randomness.
 create table public.personal_destiny_rerolls (
     id uuid primary key default gen_random_uuid(),
     user_id uuid not null references auth.users(id) on delete cascade,
@@ -59,6 +70,7 @@ create table public.personal_destiny_rerolls (
     )),
     draw_index integer not null check (draw_index >= 1),
     engine_version text not null,
+    ephemeris_version text not null,
     parallel_source_date date not null,
     original_sun_longitude double precision not null check (original_sun_longitude >= 0 and original_sun_longitude < 360),
     altered_sun_longitude double precision not null check (altered_sun_longitude >= 0 and altered_sun_longitude < 360),
@@ -70,13 +82,15 @@ create table public.personal_destiny_rerolls (
     domain_scores jsonb not null check (jsonb_typeof(domain_scores) = 'object'),
     domain_grades jsonb not null check (jsonb_typeof(domain_grades) = 'object'),
     explanations jsonb not null check (jsonb_typeof(explanations) = 'object'),
-    astronomy_snapshot jsonb not null check (jsonb_typeof(astronomy_snapshot) = 'object'),
     astrology_factors jsonb not null check (jsonb_typeof(astrology_factors) = 'array'),
     created_at timestamptz not null default now(),
     unique (user_id, local_id),
     unique (user_id, fortune_date, draw_index),
     foreign key (fortune_date, zodiac_sign)
         references public.daily_zodiac_destinies(fortune_date, zodiac_sign)
+        on delete restrict,
+    foreign key (parallel_source_date, ephemeris_version)
+        references public.astronomy_snapshots(sky_date, ephemeris_version)
         on delete restrict
 );
 
@@ -97,7 +111,6 @@ create table public.daily_fortunes (
         on delete restrict
 );
 
--- Future "bind this bad fate" feature. Text remains private until public UGC moderation exists.
 create table public.destiny_bindings (
     id uuid primary key default gen_random_uuid(),
     user_id uuid not null references auth.users(id) on delete cascade,
@@ -127,12 +140,11 @@ create unique index destiny_bindings_public_unique
     where public_fortune_date is not null;
 create index personal_destiny_rerolls_user_date_idx
     on public.personal_destiny_rerolls (user_id, fortune_date, draw_index);
-create index destiny_bindings_user_created_idx
-    on public.destiny_bindings (user_id, created_at desc);
 create index daily_zodiac_destinies_engine_idx
     on public.daily_zodiac_destinies (engine_version, fortune_date desc);
 
 alter table public.profiles enable row level security;
+alter table public.astronomy_snapshots enable row level security;
 alter table public.daily_zodiac_destinies enable row level security;
 alter table public.personal_destiny_rerolls enable row level security;
 alter table public.daily_fortunes enable row level security;
@@ -141,21 +153,20 @@ alter table public.destiny_bindings enable row level security;
 create policy "profiles_select_own"
     on public.profiles for select
     using (auth.uid() = id);
-
--- Public destinies are readable but never client-writable.
+create policy "astronomy_snapshots_select_authenticated"
+    on public.astronomy_snapshots for select
+    to authenticated
+    using (true);
 create policy "daily_zodiac_destinies_select_authenticated"
     on public.daily_zodiac_destinies for select
     to authenticated
     using (true);
-
 create policy "personal_destiny_rerolls_select_own"
     on public.personal_destiny_rerolls for select
     using (auth.uid() = user_id);
-
 create policy "daily_fortunes_select_own"
     on public.daily_fortunes for select
     using (auth.uid() = user_id);
-
 create policy "destiny_bindings_select_own"
     on public.destiny_bindings for select
     using (auth.uid() = user_id);
@@ -170,25 +181,26 @@ create policy "destiny_bindings_delete_own"
     on public.destiny_bindings for delete
     using (auth.uid() = user_id);
 
--- Public rows are immutable after insertion, including for accidental service-role updates.
-create or replace function public.reject_public_destiny_mutation()
-returns trigger
-language plpgsql
-as $$
+create or replace function public.reject_immutable_destiny_mutation()
+returns trigger language plpgsql as $$
 begin
-    raise exception 'daily_zodiac_destinies rows are immutable';
+    raise exception '% rows are immutable', tg_table_name;
 end;
 $$;
 
+create trigger astronomy_snapshots_immutable
+before update or delete on public.astronomy_snapshots
+for each row execute function public.reject_immutable_destiny_mutation();
 create trigger daily_zodiac_destinies_immutable
 before update or delete on public.daily_zodiac_destinies
-for each row execute function public.reject_public_destiny_mutation();
+for each row execute function public.reject_immutable_destiny_mutation();
 
--- Trusted Edge Function commits all 12 zodiac rows as one transaction. Existing complete days are
--- returned unchanged. A partial pre-existing day is treated as corruption instead of silently patched.
+-- Trusted Edge Function commits the real sky once and all 12 zodiac rows in the same transaction.
 create or replace function public.commit_daily_zodiac_destinies(
     p_fortune_date date,
     p_engine_version text,
+    p_ephemeris_version text,
+    p_astronomy_snapshot jsonb,
     p_rows jsonb
 )
 returns setof public.daily_zodiac_destinies
@@ -208,30 +220,25 @@ begin
     where fortune_date = p_fortune_date;
 
     if existing_count = 12 then
-        return query
-        select * from public.daily_zodiac_destinies
-        where fortune_date = p_fortune_date
-        order by zodiac_sign;
+        return query select * from public.daily_zodiac_destinies
+        where fortune_date = p_fortune_date order by zodiac_sign;
         return;
     elsif existing_count <> 0 then
         raise exception 'Partial public destiny day exists for %', p_fortune_date;
     end if;
 
+    insert into public.astronomy_snapshots (sky_date, ephemeris_version, snapshot)
+    values (p_fortune_date, p_ephemeris_version, p_astronomy_snapshot)
+    on conflict (sky_date, ephemeris_version) do nothing;
+
     insert into public.daily_zodiac_destinies (
-        fortune_date, zodiac_sign, engine_version, overall_grade, overall_score,
-        domain_scores, domain_grades, explanations, astronomy_snapshot, astrology_factors
+        fortune_date, zodiac_sign, engine_version, ephemeris_version, astronomy_source_date,
+        overall_grade, overall_score, domain_scores, domain_grades, explanations, astrology_factors
     )
     select
-        p_fortune_date,
-        row_data.zodiac_sign,
-        p_engine_version,
-        row_data.overall_grade,
-        row_data.overall_score,
-        row_data.domain_scores,
-        row_data.domain_grades,
-        row_data.explanations,
-        row_data.astronomy_snapshot,
-        row_data.astrology_factors
+        p_fortune_date, row_data.zodiac_sign, p_engine_version, p_ephemeris_version, p_fortune_date,
+        row_data.overall_grade, row_data.overall_score, row_data.domain_scores,
+        row_data.domain_grades, row_data.explanations, row_data.astrology_factors
     from jsonb_to_recordset(p_rows) as row_data(
         zodiac_sign text,
         overall_grade text,
@@ -239,7 +246,6 @@ begin
         domain_scores jsonb,
         domain_grades jsonb,
         explanations jsonb,
-        astronomy_snapshot jsonb,
         astrology_factors jsonb
     );
 
@@ -247,10 +253,8 @@ begin
         raise exception 'Public destiny batch did not produce 12 unique zodiac rows';
     end if;
 
-    return query
-    select * from public.daily_zodiac_destinies
-    where fortune_date = p_fortune_date
-    order by zodiac_sign;
+    return query select * from public.daily_zodiac_destinies
+    where fortune_date = p_fortune_date order by zodiac_sign;
 end;
 $$;
 
@@ -269,14 +273,13 @@ declare
     result_row public.personal_destiny_rerolls;
     p_date date := (p_payload->>'fortune_date')::date;
     p_zodiac text := p_payload->>'zodiac_sign';
+    p_source_date date := (p_payload->>'parallel_source_date')::date;
+    p_ephemeris text := p_payload->>'ephemeris_version';
     current_count integer;
 begin
-    select * into result_row
-    from public.personal_destiny_rerolls
+    select * into result_row from public.personal_destiny_rerolls
     where user_id = p_user_id and local_id = p_local_id;
-    if found then
-        return result_row;
-    end if;
+    if found then return result_row; end if;
 
     if not exists (
         select 1 from public.daily_zodiac_destinies
@@ -285,38 +288,31 @@ begin
         raise exception 'Public destiny must exist before private reroll';
     end if;
 
+    insert into public.astronomy_snapshots (sky_date, ephemeris_version, snapshot)
+    values (p_source_date, p_ephemeris, p_payload->'astronomy_snapshot')
+    on conflict (sky_date, ephemeris_version) do nothing;
+
     insert into public.daily_fortunes (user_id, fortune_date, zodiac_sign)
     values (p_user_id, p_date, p_zodiac)
     on conflict (user_id, fortune_date) do nothing;
 
-    select reroll_count into current_count
-    from public.daily_fortunes
-    where user_id = p_user_id and fortune_date = p_date
-    for update;
+    select reroll_count into current_count from public.daily_fortunes
+    where user_id = p_user_id and fortune_date = p_date for update;
 
     insert into public.personal_destiny_rerolls (
         user_id, local_id, fortune_date, zodiac_sign, draw_index, engine_version,
-        parallel_source_date, original_sun_longitude, altered_sun_longitude,
-        sun_longitude_difference, overall_grade, overall_score, domain_scores,
-        domain_grades, explanations, astronomy_snapshot, astrology_factors
+        ephemeris_version, parallel_source_date, original_sun_longitude,
+        altered_sun_longitude, sun_longitude_difference, overall_grade, overall_score,
+        domain_scores, domain_grades, explanations, astrology_factors
     ) values (
-        p_user_id,
-        p_local_id,
-        p_date,
-        p_zodiac,
-        current_count + 1,
-        p_payload->>'engine_version',
-        (p_payload->>'parallel_source_date')::date,
+        p_user_id, p_local_id, p_date, p_zodiac, current_count + 1,
+        p_payload->>'engine_version', p_ephemeris, p_source_date,
         (p_payload->>'original_sun_longitude')::double precision,
         (p_payload->>'altered_sun_longitude')::double precision,
         (p_payload->>'sun_longitude_difference')::double precision,
-        p_payload->>'overall_grade',
-        (p_payload->>'overall_score')::double precision,
-        p_payload->'domain_scores',
-        p_payload->'domain_grades',
-        p_payload->'explanations',
-        p_payload->'astronomy_snapshot',
-        p_payload->'astrology_factors'
+        p_payload->>'overall_grade', (p_payload->>'overall_score')::double precision,
+        p_payload->'domain_scores', p_payload->'domain_grades',
+        p_payload->'explanations', p_payload->'astrology_factors'
     ) returning * into result_row;
 
     update public.daily_fortunes
@@ -343,30 +339,22 @@ begin
     if p_zodiac not in (
         'ARIES', 'TAURUS', 'GEMINI', 'CANCER', 'LEO', 'VIRGO',
         'LIBRA', 'SCORPIO', 'SAGITTARIUS', 'CAPRICORN', 'AQUARIUS', 'PISCES'
-    ) then
-        raise exception 'Invalid zodiac';
-    end if;
+    ) then raise exception 'Invalid zodiac'; end if;
 
     update public.profiles
     set zodiac_sign = case when zodiac_sign is null then p_zodiac else zodiac_sign end,
         pending_zodiac_sign = case when zodiac_sign is null then null else p_zodiac end,
         pending_zodiac_effective_date = case when zodiac_sign is null then null else tomorrow end,
         updated_at = now()
-    where id = auth.uid()
-    returning * into result_row;
-
+    where id = auth.uid() returning * into result_row;
     return result_row;
 end;
 $$;
 
 create or replace function public.handle_new_user()
-returns trigger
-language plpgsql
-security definer set search_path = ''
-as $$
+returns trigger language plpgsql security definer set search_path = '' as $$
 begin
-    insert into public.profiles (id) values (new.id)
-    on conflict (id) do nothing;
+    insert into public.profiles (id) values (new.id) on conflict (id) do nothing;
     return new;
 end;
 $$;
@@ -375,8 +363,8 @@ create trigger on_auth_user_created
 after insert on auth.users
 for each row execute procedure public.handle_new_user();
 
-revoke all on function public.commit_daily_zodiac_destinies(date, text, jsonb) from public, anon, authenticated;
+revoke all on function public.commit_daily_zodiac_destinies(date, text, text, jsonb, jsonb) from public, anon, authenticated;
 revoke all on function public.commit_personal_reroll(uuid, uuid, jsonb) from public, anon, authenticated;
-grant execute on function public.commit_daily_zodiac_destinies(date, text, jsonb) to service_role;
+grant execute on function public.commit_daily_zodiac_destinies(date, text, text, jsonb, jsonb) to service_role;
 grant execute on function public.commit_personal_reroll(uuid, uuid, jsonb) to service_role;
 grant execute on function public.set_or_request_zodiac(text) to authenticated;
