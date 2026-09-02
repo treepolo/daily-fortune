@@ -1,0 +1,6 @@
+[functions.daily-destiny]
+# This endpoint accepts two caller types: authenticated app users and the scheduled Cron request.
+# Cron has no user JWT, so platform JWT verification is disabled and the handler performs its own
+# authorization: user requests are verified through Supabase Auth; Cron must present the matching
+# DAILY_DESTINY_CRON_SECRET header. A publishable API key alone is never enough to run an action.
+verify_jwt = false
