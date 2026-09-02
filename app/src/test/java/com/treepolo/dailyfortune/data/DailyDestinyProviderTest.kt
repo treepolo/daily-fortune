@@ -4,6 +4,7 @@ import com.treepolo.dailyfortune.model.DestinySource
 import com.treepolo.dailyfortune.model.ZodiacSign
 import java.time.LocalDate
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -31,9 +32,10 @@ class DailyDestinyProviderTest {
     }
 
     @Test
-    fun privateRerollUsesRealParallelSkyAndSameAstrologyEngine() {
+    fun privateRerollUsesAnyRealDayAndSameAstrologyEngine() {
         val date = LocalDate.of(2026, 9, 2)
-        val destiny = DailyDestinyProvider.personalReroll(date, ZodiacSign.SCORPIO)
+        val zodiac = ZodiacSign.SCORPIO
+        val destiny = DailyDestinyProvider.personalReroll(date, zodiac)
         val sky = requireNotNull(destiny.parallelSky)
 
         assertEquals(DestinySource.PERSONAL_ASTROLOGY, destiny.source)
@@ -41,7 +43,11 @@ class DailyDestinyProviderTest {
         assertEquals(AstrologyEngine.version, sky.engineVersion)
         assertEquals(date, sky.originalDate)
         assertTrue(sky.sourceDate.year in 1900..2100)
-        assertTrue("Sun difference was ${sky.sunLongitudeDifference}", sky.sunLongitudeDifference < 0.75)
+        assertNotEquals(date, sky.sourceDate)
         assertEquals(sky.sourceDate, destiny.astrologyAudit.astronomy.date)
+        assertEquals(97, destiny.astrologyAudit.astronomy.samples.size)
+
+        val reproduced = ParallelSkyGenerator.resolve(date, zodiac, sky.sourceDate)
+        assertEquals(destiny, reproduced)
     }
 }
