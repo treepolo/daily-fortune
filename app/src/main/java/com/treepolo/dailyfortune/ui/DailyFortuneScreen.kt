@@ -102,70 +102,102 @@ private fun DailyFortuneScreen(
             Spacer(modifier = Modifier.height(28.dp))
 
             val zodiac = state.selectedZodiac
-            if (zodiac == null) {
-                ZodiacPicker(onSelectZodiac)
-            } else {
-                DestinyTicker(state, zodiac)
-                Spacer(modifier = Modifier.height(22.dp))
+            when {
+                zodiac == null -> ZodiacPicker(onSelectZodiac)
 
-                Text(
-                    text = if (state.hasDefiedFate) {
-                        "${zodiac.label} · 你的命運已進入私人平行天象"
-                    } else {
-                        "${zodiac.label} · 目前仍在今日公共天命上"
-                    },
-                    style = MaterialTheme.typography.titleMedium,
-                    textAlign = TextAlign.Center,
-                )
-                Spacer(modifier = Modifier.height(10.dp))
-                OutlinedButton(onClick = onReroll) {
-                    Text("逆天改命!!")
-                }
-                Text(
-                    text = "今天已逆天改命 ${state.todayRerollCount} 次",
-                    modifier = Modifier.padding(top = 8.dp),
-                    style = MaterialTheme.typography.labelMedium,
-                )
-
-                state.destinyChange?.let { change ->
-                    Spacer(modifier = Modifier.height(12.dp))
+                state.publicDestinies.size != ZodiacSign.entries.size -> {
                     Card(modifier = Modifier.fillMaxWidth()) {
-                        Column(modifier = Modifier.padding(14.dp)) {
+                        Column(
+                            modifier = Modifier.padding(18.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                        ) {
                             Text(
-                                text = change.narrative,
-                                style = MaterialTheme.typography.bodyMedium,
-                            )
-                            Text(
-                                text = change.domainChanges.values.joinToString("　｜　") { domain ->
-                                    "${domain.domain.label} ${domain.beforeGrade.label}→${domain.afterGrade.label}"
+                                text = if (state.isLoading) {
+                                    "正在讀取今日天命……"
+                                } else {
+                                    state.errorMessage ?: "暫時無法取得今日天命。"
                                 },
-                                modifier = Modifier.padding(top = 8.dp),
-                                style = MaterialTheme.typography.bodySmall,
+                                style = MaterialTheme.typography.bodyLarge,
+                                textAlign = TextAlign.Center,
                             )
-                            state.currentDestiny?.parallelSky?.let { sky ->
+                            if (!state.isLoading) {
                                 Text(
-                                    text = "平行天象取自 ${sky.sourceDate} 的真實天空；正午太陽黃經與今日相差 ${formatDegrees(sky.sunLongitudeDifference)}°。",
+                                    text = "如果本機沒有今天的中央快取，正式版不會自行補算另一套天命。",
                                     modifier = Modifier.padding(top = 8.dp),
-                                    style = MaterialTheme.typography.labelSmall,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    textAlign = TextAlign.Center,
                                 )
                             }
                         }
                     }
                 }
 
-                if (state.hasDefiedFate) {
+                else -> {
+                    DestinyTicker(state, zodiac)
+                    Spacer(modifier = Modifier.height(22.dp))
+
                     Text(
-                        text = "跑馬燈中的 ${zodiac.label} 已替換成你的私人平行天象結果；其他十一星座仍是今日公共天象。",
-                        modifier = Modifier.padding(top = 8.dp),
-                        style = MaterialTheme.typography.labelSmall,
+                        text = if (state.hasDefiedFate) {
+                            "${zodiac.label} · 你的命運已進入私人平行天象"
+                        } else {
+                            "${zodiac.label} · 目前仍在今日公共天命上"
+                        },
+                        style = MaterialTheme.typography.titleMedium,
                         textAlign = TextAlign.Center,
                     )
+                    Spacer(modifier = Modifier.height(10.dp))
+                    OutlinedButton(
+                        onClick = onReroll,
+                        enabled = !state.isLoading,
+                    ) {
+                        Text("逆天改命!!")
+                    }
+                    Text(
+                        text = "今天已逆天改命 ${state.todayRerollCount} 次",
+                        modifier = Modifier.padding(top = 8.dp),
+                        style = MaterialTheme.typography.labelMedium,
+                    )
+
+                    state.destinyChange?.let { change ->
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Card(modifier = Modifier.fillMaxWidth()) {
+                            Column(modifier = Modifier.padding(14.dp)) {
+                                Text(
+                                    text = change.narrative,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                )
+                                Text(
+                                    text = change.domainChanges.values.joinToString("　｜　") { domain ->
+                                        "${domain.domain.label} ${domain.beforeGrade.label}→${domain.afterGrade.label}"
+                                    },
+                                    modifier = Modifier.padding(top = 8.dp),
+                                    style = MaterialTheme.typography.bodySmall,
+                                )
+                                state.currentDestiny?.parallelSky?.let { sky ->
+                                    Text(
+                                        text = "平行天象取自 ${sky.sourceDate} 的真實天空；正午太陽黃經與今日相差 ${formatDegrees(sky.sunLongitudeDifference)}°。",
+                                        modifier = Modifier.padding(top = 8.dp),
+                                        style = MaterialTheme.typography.labelSmall,
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    if (state.hasDefiedFate) {
+                        Text(
+                            text = "跑馬燈中的 ${zodiac.label} 已替換成你的私人平行天象結果；其他十一星座仍是今日公共天象。",
+                            modifier = Modifier.padding(top = 8.dp),
+                            style = MaterialTheme.typography.labelSmall,
+                            textAlign = TextAlign.Center,
+                        )
+                    }
                 }
             }
 
             Spacer(modifier = Modifier.height(28.dp))
             Text(
-                text = "公共天命：今日真實星曆 + Astrology Engine v1。逆天改命：安全亂數抽取另一個同季節、物理上真實存在的天空，再用完全相同的占星規則重算。",
+                text = "公共天命：今日真實星曆 + Astrology Engine v1。逆天改命：安全亂數抽取另一個同季節、物理上真實存在的天空，再用完全相同的占星規則重算。Room 會保存今日快取、完整計算依據與改命歷史。",
                 style = MaterialTheme.typography.labelSmall,
                 textAlign = TextAlign.Center,
             )
