@@ -1,6 +1,15 @@
 import { Body, Ecliptic, GeoVector } from "npm:astronomy-engine@2.1.19";
+import {
+  DOMAIN_GRADE_THRESHOLDS,
+  OVERALL_GRADE_THRESHOLDS,
+  aspectFactorMultiplier,
+  bodyDomainMultiplier,
+  houseFactorMultiplier,
+  type CalibrationAspect,
+  type GradeThresholds,
+} from "./astrology_calibration_v4.ts";
 
-export const ASTROLOGY_ENGINE_VERSION = "astrology-v1.0.0";
+export const ASTROLOGY_ENGINE_VERSION = "astrology-v1.1.0";
 export const EPHEMERIS_VERSION = "astronomy-engine-2.1.19";
 export const TAIPEI_ZONE = "Asia/Taipei";
 
@@ -214,7 +223,7 @@ export function calculate(zodiacSign: ZodiacSign, astronomy: AstronomyDayData): 
     DOMAINS.map((domain) => [domain, factors.reduce((sum, factor) => sum + factor.contributions[domain], 0)]),
   ) as NumberMap;
   const overallScore = DOMAINS.reduce((sum, domain) => sum + domainScores[domain], 0) / DOMAINS.length;
-  const domainGrades = Object.fromEntries(DOMAINS.map((domain) => [domain, grade(domainScores[domain])])) as Record<FortuneDomain, FortuneGrade>;
+  const domainGrades = Object.fromEntries(DOMAINS.map((domain) => [domain, gradeDomain(domainScores[domain], domain)])) as Record<FortuneDomain, FortuneGrade>;
   const domainExplanations = Object.fromEntries(
     DOMAINS.map((domain) => [domain, domainExplanation(domain, domainScores[domain], factors)]),
   ) as Record<FortuneDomain, string>;
@@ -244,7 +253,7 @@ function buildFactors(user: ZodiacSign, astronomy: AstronomyDayData): AstrologyF
         `${BODY_LABEL[summary.body]}位於第${house}宮`,
         `${BODY_LABEL[summary.body]}於今日約 ${Math.trunc(fraction * 100)}% 時間位於${ZODIAC_LABEL[sign]}（太陽星座整宮制第${house}宮）`,
         (domain) => bodyValence(summary.body) * affinity(summary.body, domain) * houseWeight(house, domain) * dignity * fraction * 8,
-      ));
+      ), (domain) => houseFactorMultiplier(summary.body, house, domain));
 
       const relation = signRelation(user, sign);
       if (relation) {
@@ -253,7 +262,7 @@ function buildFactors(user: ZodiacSign, astronomy: AstronomyDayData): AstrologyF
           `${BODY_LABEL[summary.body]}與${ZODIAC_LABEL[user]}形成${relation.label}`,
           `${BODY_LABEL[summary.body]}位於${ZODIAC_LABEL[sign]}，以${ZODIAC_LABEL[user]}為太陽星座時形成星座級${relation.label}；不假設出生太陽的精確度數`,
           (domain) => relation.polarity(summary.body) * affinity(summary.body, domain) * dignity * fraction * 5,
-        ));
+        ), (domain) => bodyDomainMultiplier(summary.body, domain));
       }
     }
 
@@ -267,7 +276,7 @@ function buildFactors(user: ZodiacSign, astronomy: AstronomyDayData): AstrologyF
         `${BODY_LABEL[summary.body]}在四個六小時運動區段中約 ${Math.trunc(summary.retrogradeFraction * 100)}% 呈逆行${summary.directionChanged ? "，且當日偵測到運動方向切換" : ""}`,
         (domain) => -3 * retrogradeSensitivity(summary.body) * affinity(summary.body, domain) *
           (0.5 + 0.5 * clamp(houseWeight(house, domain), 0, 1)) * stationBoost,
-      ));
+      ), (domain) => bodyDomainMultiplier(summary.body, domain));
     }
   }
 
@@ -291,7 +300,7 @@ function buildFactors(user: ZodiacSign, astronomy: AstronomyDayData): AstrologyF
         const houseRelevance = 0.6 + 0.4 * clamp(Math.max(houseWeight(houseA, domain), houseWeight(houseB, domain)), 0, 1);
         return polarity * hit.aspect.importance * strength * avgAffinity * houseRelevance * dignity * 10;
       },
-    ));
+    ), (domain) => aspectFactorMultiplier(hit.first, hit.second, hit.aspect.name as CalibrationAspect, domain));
   }
   return factors;
 }
@@ -305,17 +314,35 @@ function factor(id: string, title: string, evidence: string, value: (domain: For
   };
 }
 
-function addIfMeaningful(list: AstrologyFactor[], item: AstrologyFactor) {
-  if (DOMAINS.some((domain) => Math.abs(item.contributions[domain]) >= 0.01)) list.push(item);
+function addIfMeaningful(
+  list: AstrologyFactor[],
+  item: AstrologyFactor,
+  multiplier: (domain: FortuneDomain) => number = () => 1,
+) {
+  if (!DOMAINS.some((domain) => Math.abs(item.contributions[domain]) >= 0.01)) return;
+  list.push({
+    ...item,
+    contributions: Object.fromEntries(
+      DOMAINS.map((domain) => [domain, item.contributions[domain] * multiplier(domain)]),
+    ) as NumberMap,
+  });
 }
 
 export function grade(score: number): FortuneGrade {
-  if (score >= 10) return "DAI_JI";
-  if (score >= 5.5) return "JI";
-  if (score >= 1.8) return "XIAO_JI";
-  if (score > -1.8) return "PING";
-  if (score > -5.5) return "XIAO_XIONG";
-  if (score > -10) return "XIONG";
+  return gradeWithThresholds(score, OVERALL_GRADE_THRESHOLDS);
+}
+
+function gradeDomain(score: number, domain: FortuneDomain): FortuneGrade {
+  return gradeWithThresholds(score, DOMAIN_GRADE_THRESHOLDS[domain]);
+}
+
+function gradeWithThresholds(score: number, thresholds: GradeThresholds): FortuneGrade {
+  if (score >= thresholds[5]) return "DAI_JI";
+  if (score >= thresholds[4]) return "JI";
+  if (score >= thresholds[3]) return "XIAO_JI";
+  if (score >= thresholds[2]) return "PING";
+  if (score >= thresholds[1]) return "XIAO_XIONG";
+  if (score >= thresholds[0]) return "XIONG";
   return "DAI_XIONG";
 }
 
@@ -328,7 +355,7 @@ function domainExplanation(domain: FortuneDomain, score: number, factors: Astrol
   else if (positive) suffix = `主要正向來源是${positive.f.title}。`;
   else if (negative) suffix = `主要壓力來源是${negative.f.title}。`;
   else suffix = "今日沒有單一高權重天象主導此領域，整體接近平衡。";
-  return `${gradeLabel(grade(score))}（${score.toFixed(1)}分）。${suffix}`;
+  return `${gradeLabel(gradeDomain(score, domain))}（${score.toFixed(1)}分）。${suffix}`;
 }
 
 function overallExplanation(overall: number, scores: NumberMap, factors: AstrologyFactor[]): string {
