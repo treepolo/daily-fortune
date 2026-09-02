@@ -1,22 +1,36 @@
-# 籤文來源與著作權紀錄
+# 資料、規則與授權來源
 
-## 優先籤池：《關聖帝君靈籤》
+本專案已淘汰古籤／籤詩資料；正式命運系統只依天文星曆與版本化占星規則運作。
 
-本專案優先採用清代刊本《關聖帝君靈籤》的一百籤。維基文庫作品頁標示該作品因作者逝世超過 100 年且 1931 年以前出版，在全世界屬公有領域。
+## Astronomy Engine
 
-作品總頁：
+- 專案：https://github.com/cosinekitty/astronomy
+- 本專案固定 v1 天文依賴：`2.1.19`
+- 授權：MIT
+- 用途：太陽、月亮與行星位置、地心向量與黃道座標等星曆計算。
+- Android 使用 Kotlin 版本；Supabase Edge Function 使用 npm `astronomy-engine@2.1.19`。
 
-- https://zh.wikisource.org/zh-hant/%E9%97%9C%E8%81%96%E5%B8%9D%E5%90%9B%E9%9D%88%E7%B1%A4
+## NASA/JPL Horizons
 
-目前開發期測試資料已人工核對：
+- https://ssd.jpl.nasa.gov/horizons/
+- 用途：開發期間抽查／驗證天體位置。
+- 不作正式 App runtime 硬依賴，因此 JPL API 暫時不可用不會讓每日運勢停止計算。
 
-- 第 1 籤：https://zh.wikisource.org/zh-hant/%E9%97%9C%E8%81%96%E5%B8%9D%E5%90%9B%E9%9D%88%E7%B1%A4/1
-- 第 29 籤：https://zh.wikisource.org/zh-hant/%E9%97%9C%E8%81%96%E5%B8%9D%E5%90%9B%E9%9D%88%E7%B1%A4/29
-- 第 87 籤：https://zh.wikisource.org/zh-hant/%E9%97%9C%E8%81%96%E5%B8%9D%E5%90%9B%E9%9D%88%E7%B1%A4/87
+## 占星規則參考
 
-## 使用原則
+Astrology Engine v1 將傳統太陽星座占星概念形式化成固定演算法。參考入口包括：
 
-- 古籍籤詩本體從公有領域原本校對。
-- 不直接複製現代宮廟、命理網站或商業 App 自行撰寫的現代解籤。
-- App 的現代白話解說與五領域說明由本專案重新撰寫。
-- 維基文庫僅作數位校對與來源導航；正式 corpus 匯入時應保存每支籤的來源 URL 與校對狀態，必要時再對照古籍掃描。
+- Astrodienst / Astrowiki — Tropical Zodiac
+  - https://www.astro.com/astrowiki/en/Tropical_Zodiac
+- Astrodienst / Astrowiki — Sun Sign Astrology
+  - https://www.astro.com/astrowiki/en/Sun_sign_astrology
+- Astrodienst / Astrowiki — Aspect
+  - https://www.astro.com/astrowiki/en/Aspect
+- Astrodienst / Astrowiki — Essential Dignity
+  - https://www.astro.com/astrowiki/en/Essential_Dignity
+
+行星／宮位／相位的大方向採成熟占星傳統中常見的對應；數值權重、容許度、分數門檻與組合公式沒有業界唯一標準，因此是本專案明確版本化的模型設計。完整數字見 `docs/ASTROLOGY_ENGINE_V1.md`。
+
+## 產品定位
+
+天體位置與相位的輸入是可驗算的天文計算；「這些天象代表財運、戀愛或吉凶」是占星術解讀，不具有已建立的科學預測效力。產品文案與商店資料應把此功能定位為娛樂性占星。

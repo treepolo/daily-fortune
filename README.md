@@ -1,27 +1,48 @@
 # 今日運勢 / Daily Fortune
 
-一個 Android 每日抽籤 App。每天可正常抽取一次今日運勢；結果會固定保存到換日。若對命運不滿，使用者可以按下「逆天改命!!」作廢目前結果並從完整籤池重新抽取，而且抽過放回。
+一個以真實天文星曆與固定占星規則產生每日十二星座運勢的 Android App。
 
-## 已定案的核心
+## 核心世界觀
 
-- 每個曆日第一次可正常抽籤一次，關閉 App、重新開機後仍維持同一結果。
-- 「逆天改命!!」可無限重抽，可能再次抽到同一支籤。
-- 綜合運勢之外，固定顯示財運、戀愛、工作／學業、人際、健康。
-- 籤詩採公有領域古籍；現代白話解說自行撰寫，不複製現代命理網站。
-- 統計總逆天改命次數、平均每個使用日改命次數、單日最高、大吉次數／比例、非凶比例、大凶次數／比例。
-- 被「逆天改命」作廢的籤仍計入歷史抽籤統計。
-- 架構從第一天預留 Supabase 匿名帳號、雲端同步、跨裝置，以及未來「綁凶籤」功能。
-- 未來綁凶籤可附 0–20 字留言；第一版不公開陌生人的留言內容。
-- 未來廣告規則已記錄但暫不實作：一般「逆天改命」需看完整廣告；當前若為大吉則免費改命，並立即捨棄該大吉結果重新抽取。
+- **公共天命**：以 `Asia/Taipei` 當日 00:00–24:00 的真實天空為輸入，經 Astronomy Engine + Astrology Engine v1 算出十二星座的綜合、財運、戀愛、工作／學業、人際、健康。
+- **逆天改命**：不抽古籤，也不把各行星各自亂骰。系統使用安全亂數選另一年份，再找與今天正午太陽黃經最接近的真實星曆日期，整包採用那一天物理一致的天空，最後用完全相同的 Astrology Engine 重算私人命運。
+- 改命可能變好、變差或幾乎不變；系統不為了討好使用者篩掉壞結果。
+- 每個結果都保留 audit：天文資料 → 成立的占星因素 → 五領域加減分 → 吉凶與說明。
+- 同一天的公共十二星座是中央權威資料；個人改命只改本人的世界線。
 
-## 目前開發階段
+古籤／籤詩機制已自產品與執行路徑淘汰。
 
-`0.1.0` 先建立可驗證的本機垂直切片：每日固定、逆天改命、五領域顯示與統計。籤池目前只放入少量已核對古籍來源的測試籤，用來驗證機制；正式匯入完整 100 籤前不會把自創籤詩混入資料。
+## 目前開發狀態
+
+Android 本機原型已能：
+
+- 選擇太陽星座。
+- 計算真實天象的十二星座公共運勢。
+- 單行電視新聞式跑馬燈。
+- 使用安全亂數建立物理可成立的私人平行天象並重算。
+- 顯示改命前後的吉凶與主要新增／移除因素。
+- 保存今日私人世界線與改命統計。
+
+Repo 也已備妥尚未部署的 Supabase 後端：
+
+- PostgreSQL schema / RLS / 不可變公共天命。
+- Astronomy snapshot 正規化保存。
+- TypeScript/Deno 版 Astrology Engine v1。
+- 每日中央 12 星座生成與交易鎖定。
+- 伺服器安全亂數私人平行天象改命。
+- 私人改命交易與跨裝置衝突保護。
+- 星座變更隔日生效的資料層。
+
+真正接上 Supabase 專案後，正式 App 會把中央端當權威；目前 Android 本機計算只作開發與實機驗證。
+
+## 文件
 
 - 產品規格：[`docs/PRODUCT_SPEC.md`](docs/PRODUCT_SPEC.md)
 - 技術架構：[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
-- 籤文來源：[`docs/SOURCES.md`](docs/SOURCES.md)
-- Supabase 初始資料庫：[`supabase/migrations/0001_initial.sql`](supabase/migrations/0001_initial.sql)
+- Astrology Engine v1：[`docs/ASTROLOGY_ENGINE_V1.md`](docs/ASTROLOGY_ENGINE_V1.md)
+- 資料與規則來源：[`docs/SOURCES.md`](docs/SOURCES.md)
+- Supabase 部署：[`supabase/DEPLOYMENT.md`](supabase/DEPLOYMENT.md)
+- Supabase 初始 migration：[`supabase/migrations/0001_initial.sql`](supabase/migrations/0001_initial.sql)
 
 ## 技術基線
 
@@ -30,14 +51,12 @@
 - Android Gradle Plugin 9.3.1
 - Gradle 9.5.0
 - `compileSdk 36` / `targetSdk 36` / `minSdk 26`
-- Preferences DataStore：目前本機狀態與彙總統計
-- Supabase：下一階段接入帳號與事件同步
-
-目前 Google Play 自 2026-08-31 起要求新的手機 App 指定 Android 16（API 36）以上為目標，因此專案從一開始即以 API 36 為 `targetSdk`。
+- Astronomy Engine 2.1.19（MIT）
+- Preferences DataStore：目前開發期本機狀態
+- Supabase：正式中央權威與同步，程式已備妥、專案尚未部署
+- GitHub Actions：Deno 後端檢查／測試 + Android 單元測試 + Debug APK
 
 ## 本機建置
-
-首次 push 後，GitHub Actions 會自動產生並提交 Gradle Wrapper。之後可使用：
 
 ```bash
 ./gradlew :app:testDebugUnitTest :app:assembleDebug
@@ -49,4 +68,4 @@ Windows：
 .\gradlew.bat :app:testDebugUnitTest :app:assembleDebug
 ```
 
-Supabase 金鑰、簽章檔與任何本機密鑰不得提交到 Git。
+Supabase secret key、正式簽章檔、Cron secret 與其他私密金鑰不得提交到 Git。
