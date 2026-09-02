@@ -14,6 +14,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Check Supabase astrology backend
+        run: |
+          deno check supabase/functions/daily-destiny/index.ts
+          deno test supabase/functions/_shared/astrology_v1_test.ts
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
