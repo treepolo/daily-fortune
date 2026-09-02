@@ -21,16 +21,27 @@ import kotlin.math.floor
 
 /** Actual astronomical input for Astrology Engine v1. No pseudo-random inputs. */
 object AstronomyEphemeris {
+    const val version = "astronomy-engine-2.1.19"
     val zone: ZoneId = ZoneId.of("Asia/Taipei")
     private const val sampleMinutes = 15L
     private const val intervalCount = 96
-    private const val motionStepIntervals = 24 // six hours
     private const val motionEpsilon = 0.002
 
     fun analyze(date: LocalDate): AstronomyDayData {
         val start = date.atStartOfDay(zone).toInstant()
         val samples = (0..intervalCount).map { index ->
             sample(start.plus(Duration.ofMinutes(sampleMinutes * index)))
+        }
+        return rebuild(date, samples)
+    }
+
+    /** Rebuilds derived astronomy features from a persisted, authoritative 97-sample snapshot. */
+    fun rebuild(date: LocalDate, samples: List<AstroSample>): AstronomyDayData {
+        require(samples.size == intervalCount + 1) {
+            "Expected ${intervalCount + 1} astronomy samples, got ${samples.size}"
+        }
+        require(samples.all { it.longitudes.keys.containsAll(AstroBody.entries) }) {
+            "Astronomy snapshot is missing one or more bodies"
         }
         val bodies = AstroBody.entries.associateWith { summarizeBody(it, samples) }
         val aspects = detectAspects(samples)

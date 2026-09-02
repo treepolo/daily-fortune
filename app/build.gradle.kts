@@ -1,6 +1,7 @@
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.ksp)
 }
 
 android {
@@ -15,12 +16,9 @@ android {
         // every distributed debug APK can upgrade the previous one in place.
         // Local builds fall back to 2 until release versioning is introduced.
         versionCode = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 2
-        versionName = "0.2.0"
+        versionName = "0.3.0"
     }
 
-    // Debug builds intentionally use one repository-scoped, non-production key so
-    // APKs produced by different GitHub Actions runners can update each other.
-    // Release signing must use a separate private upload/release key.
     signingConfigs {
         create("stableDebug") {
             storeFile = rootProject.file("debug.keystore")
@@ -50,7 +48,12 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
+}
+
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas")
 }
 
 dependencies {
@@ -60,7 +63,10 @@ dependencies {
     implementation(libs.androidx.lifecycle.viewmodel.ktx)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.datastore.preferences)
+    implementation(libs.androidx.room3.runtime)
+    implementation(libs.androidx.sqlite.bundled)
     implementation(libs.astronomy.engine)
+    ksp(libs.androidx.room3.compiler)
 
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.compose.ui)
