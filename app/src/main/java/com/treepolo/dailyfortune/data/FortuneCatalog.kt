@@ -4,13 +4,13 @@ import com.treepolo.dailyfortune.model.DomainFortune
 import com.treepolo.dailyfortune.model.FortuneDefinition
 import com.treepolo.dailyfortune.model.FortuneDomain
 import com.treepolo.dailyfortune.model.FortuneGrade
-import kotlin.random.Random
 
 /**
- * 開發期測試籤池。
+ * 開發期私人改命測試籤池。
  *
  * 籤詩本體均取自公有領域《關聖帝君靈籤》，目前只放少量已人工核對的籤來驗證產品機制。
  * 正式版本會以結構化資料匯入完整 100 籤，不加入自創籤詩。
+ * 抽取一律由 DailyDestinyProvider 的 SecureRandom 路徑執行；Catalog 本身不提供隨機 API。
  */
 object FortuneCatalog {
     val fortunes: List<FortuneDefinition> = listOf(
@@ -75,7 +75,4 @@ object FortuneCatalog {
 
     fun byNumber(number: Int?): FortuneDefinition? =
         fortunes.firstOrNull { it.number == number }
-
-    fun random(random: Random = Random.Default): FortuneDefinition =
-        fortunes[random.nextInt(fortunes.size)]
 }
