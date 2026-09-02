@@ -7,7 +7,6 @@ on:
       - ".github/workflows/astrology-weight-search.yml"
       - "tools/astrology_weight_features.ts"
       - "tools/astrology_weight_search.py"
-      - "tools/astrology_weight_search_v2.py"
 
 permissions:
   contents: read
@@ -54,7 +53,7 @@ jobs:
       - name: Install numeric optimizer
         run: python -m pip install --disable-pip-version-check numpy scipy
       - name: Search coefficients and validate on all 880,968 destinies
-        run: python tools/astrology_weight_search_v2.py
+        run: python tools/astrology_weight_search.py
       - uses: actions/upload-artifact@v4
         with:
           name: astrology-weight-search-report
