@@ -1,11 +1,15 @@
 import {
   DOMAINS,
   analyzeDay,
-  angularDistance,
   calculate,
-  closestSeasonalDate,
   noonSunLongitude,
 } from "./astrology_v1.ts";
+import {
+  PARALLEL_MAX_DATE,
+  PARALLEL_MIN_DATE,
+  PARALLEL_SOURCE_DATE_COUNT,
+  sourceDateForIndex,
+} from "./parallel_random.ts";
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
@@ -31,12 +35,13 @@ Deno.test("March equinox Sun is near tropical Aries zero", () => {
   assert(distance < 2, `Sun longitude was ${value}`);
 });
 
-Deno.test("parallel seasonal date preserves Sun position", () => {
-  const original = "2026-09-02";
-  const source = closestSeasonalDate(original, 2047);
-  const difference = angularDistance(noonSunLongitude(original), noonSunLongitude(source));
-  assert(source.startsWith("2047-"), `Unexpected source ${source}`);
-  assert(difference < 0.75, `Sun difference was ${difference}`);
+Deno.test("parallel source index covers every day from 1900 through 2100", () => {
+  assert(PARALLEL_MIN_DATE === "1900-01-01", `Unexpected minimum ${PARALLEL_MIN_DATE}`);
+  assert(PARALLEL_MAX_DATE === "2100-12-31", `Unexpected maximum ${PARALLEL_MAX_DATE}`);
+  assert(PARALLEL_SOURCE_DATE_COUNT === 73_414, `Unexpected day count ${PARALLEL_SOURCE_DATE_COUNT}`);
+  assert(sourceDateForIndex(0) === "1900-01-01", "First source date mismatch");
+  assert(sourceDateForIndex(31) === "1900-02-01", "Source index must move across months directly");
+  assert(sourceDateForIndex(PARALLEL_SOURCE_DATE_COUNT - 1) === "2100-12-31", "Last source date mismatch");
 });
 
 Deno.test("audit factors reconstruct every domain score", () => {

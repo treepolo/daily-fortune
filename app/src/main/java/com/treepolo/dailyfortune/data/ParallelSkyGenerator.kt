@@ -7,22 +7,24 @@ import com.treepolo.dailyfortune.model.ResolvedDestiny
 import com.treepolo.dailyfortune.model.ZodiacSign
 import java.security.SecureRandom
 import java.time.LocalDate
-import java.time.YearMonth
+import java.time.temporal.ChronoUnit
 import kotlin.math.abs
-import kotlin.math.min
 
 /**
- * Creates a private "parallel sky" from a real astronomical day.
+ * Creates a private "parallel sky" from one complete real astronomical day.
  *
- * We never randomize planets independently. A reroll first uses [SecureRandom] to choose another
- * year, then finds the real calendar day in that year whose noon Sun longitude is closest to the
- * original day's noon Sun longitude. The entire 24-hour sky for that real day is then passed
- * unchanged through the same Astrology Engine as the public destiny.
+ * Planets are never randomized independently. A reroll chooses one calendar day uniformly from
+ * 1900-01-01 through 2100-12-31 (excluding the original day itself), then passes that real 24-hour
+ * sky unchanged through the same Astrology Engine as the public destiny. There is intentionally no
+ * same-season or same-Sun-longitude restriction: every other real day in the supported range can be
+ * selected.
  */
 object ParallelSkyGenerator {
-    private const val minYear = 1900
-    private const val maxYear = 2100
-    private const val seasonalSearchDays = 6L
+    internal val minSourceDate: LocalDate = LocalDate.of(1900, 1, 1)
+    internal val maxSourceDate: LocalDate = LocalDate.of(2100, 12, 31)
+    internal val sourceDateCount: Int =
+        (ChronoUnit.DAYS.between(minSourceDate, maxSourceDate) + 1L).toInt()
+
     private val secureRandom = SecureRandom()
 
     fun reroll(originalDate: LocalDate, zodiac: ZodiacSign): ResolvedDestiny {
@@ -35,6 +37,9 @@ object ParallelSkyGenerator {
         zodiac: ZodiacSign,
         sourceDate: LocalDate,
     ): ResolvedDestiny {
+        require(!sourceDate.isBefore(minSourceDate) && !sourceDate.isAfter(maxSourceDate)) {
+            "Parallel source date must be within $minSourceDate..$maxSourceDate"
+        }
         val originalSun = noonSunLongitude(originalDate)
         val alteredSun = noonSunLongitude(sourceDate)
         val astronomy = AstronomyEphemeris.analyze(sourceDate)
@@ -57,15 +62,20 @@ object ParallelSkyGenerator {
         )
     }
 
-    internal fun closestSeasonalDate(originalDate: LocalDate, targetYear: Int): LocalDate {
-        val targetLongitude = noonSunLongitude(originalDate)
-        val month = originalDate.month
-        val safeDay = min(originalDate.dayOfMonth, YearMonth.of(targetYear, month).lengthOfMonth())
-        val approximate = LocalDate.of(targetYear, month, safeDay)
+    internal fun sourceDateForIndex(index: Int): LocalDate {
+        require(index in 0 until sourceDateCount) { "Parallel source-date index out of range: $index" }
+        return minSourceDate.plusDays(index.toLong())
+    }
 
-        return (-seasonalSearchDays..seasonalSearchDays)
-            .map(approximate::plusDays)
-            .minBy { candidate -> angularDistance(targetLongitude, noonSunLongitude(candidate)) }
+    internal fun randomSourceDate(
+        originalDate: LocalDate,
+        nextIndex: (Int) -> Int = { bound -> secureRandom.nextInt(bound) },
+    ): LocalDate {
+        var sourceDate: LocalDate
+        do {
+            sourceDate = sourceDateForIndex(nextIndex(sourceDateCount))
+        } while (sourceDate == originalDate)
+        return sourceDate
     }
 
     internal fun noonSunLongitude(date: LocalDate): Double =
@@ -76,13 +86,4 @@ object ParallelSkyGenerator {
 
     internal fun angularDistance(first: Double, second: Double): Double =
         abs(AstronomyEphemeris.signedAngularDelta(first, second))
-
-    private fun randomSourceDate(originalDate: LocalDate): LocalDate {
-        val yearCount = maxYear - minYear + 1
-        var targetYear: Int
-        do {
-            targetYear = minYear + secureRandom.nextInt(yearCount)
-        } while (targetYear == originalDate.year)
-        return closestSeasonalDate(originalDate, targetYear)
-    }
 }

@@ -5,12 +5,12 @@ import {
   ZODIACS,
   calculateDay,
   persistenceRow,
-  randomParallelSourceDate,
   resolveParallel,
   serializeAstronomy,
   taipeiToday,
   type ZodiacSign,
 } from "../_shared/astrology_v1.ts";
+import { randomParallelSourceDate } from "../_shared/parallel_random.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
