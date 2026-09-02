@@ -110,7 +110,7 @@ private fun DailyFortuneScreen(
 
                 Text(
                     text = if (state.hasDefiedFate) {
-                        "${zodiac.label} · 你的命運已偏離今日公共天命"
+                        "${zodiac.label} · 你的命運已進入私人平行天象"
                     } else {
                         "${zodiac.label} · 目前仍在今日公共天命上"
                     },
@@ -126,9 +126,36 @@ private fun DailyFortuneScreen(
                     modifier = Modifier.padding(top = 8.dp),
                     style = MaterialTheme.typography.labelMedium,
                 )
+
+                state.destinyChange?.let { change ->
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Card(modifier = Modifier.fillMaxWidth()) {
+                        Column(modifier = Modifier.padding(14.dp)) {
+                            Text(
+                                text = change.narrative,
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
+                            Text(
+                                text = change.domainChanges.values.joinToString("　｜　") { domain ->
+                                    "${domain.domain.label} ${domain.beforeGrade.label}→${domain.afterGrade.label}"
+                                },
+                                modifier = Modifier.padding(top = 8.dp),
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                            state.currentDestiny?.parallelSky?.let { sky ->
+                                Text(
+                                    text = "平行天象取自 ${sky.sourceDate} 的真實天空；正午太陽黃經與今日相差 ${formatDegrees(sky.sunLongitudeDifference)}°。",
+                                    modifier = Modifier.padding(top = 8.dp),
+                                    style = MaterialTheme.typography.labelSmall,
+                                )
+                            }
+                        }
+                    }
+                }
+
                 if (state.hasDefiedFate) {
                     Text(
-                        text = "跑馬燈中的 ${zodiac.label} 已替換成你的個人古籤命運；其他十一星座仍依今日實際天象計算。",
+                        text = "跑馬燈中的 ${zodiac.label} 已替換成你的私人平行天象結果；其他十一星座仍是今日公共天象。",
                         modifier = Modifier.padding(top = 8.dp),
                         style = MaterialTheme.typography.labelSmall,
                         textAlign = TextAlign.Center,
@@ -138,7 +165,7 @@ private fun DailyFortuneScreen(
 
             Spacer(modifier = Modifier.height(28.dp))
             Text(
-                text = "公共天命：Astronomy Engine 實際星曆 + Astrology Engine v1 固定規則；全程不使用亂數。逆天改命才使用安全亂數抽籤。",
+                text = "公共天命：今日真實星曆 + Astrology Engine v1。逆天改命：安全亂數抽取另一個同季節、物理上真實存在的天空，再用完全相同的占星規則重算。",
                 style = MaterialTheme.typography.labelSmall,
                 textAlign = TextAlign.Center,
             )
@@ -247,13 +274,6 @@ private fun destinySegment(
         append("：")
         append(result.explanation)
     }
-
-    destiny.fortune?.let { fortune ->
-        append("　｜　改命籤第")
-        append(fortune.number)
-        append("籤：")
-        append(fortune.poem.joinToString("／"))
-    }
 }
 
 @Composable
@@ -284,3 +304,6 @@ private fun formatNumber(value: Double): String =
 
 private fun formatPercent(value: Double): String =
     String.format(Locale.TAIWAN, "%.1f%%", value * 100.0)
+
+private fun formatDegrees(value: Double): String =
+    String.format(Locale.TAIWAN, "%.3f", value)
