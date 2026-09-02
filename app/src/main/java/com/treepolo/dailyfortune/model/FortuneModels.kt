@@ -1,5 +1,7 @@
 package com.treepolo.dailyfortune.model
 
+import java.time.LocalDate
+
 enum class FortuneGrade(
     val label: String,
     val isNonXiong: Boolean,
@@ -41,34 +43,51 @@ data class DomainFortune(
     val explanation: String,
 )
 
-data class FortuneDefinition(
-    val number: Int,
-    val sourceGrade: String,
-    val grade: FortuneGrade,
-    val poem: List<String>,
-    val generalExplanation: String,
-    val domains: Map<FortuneDomain, DomainFortune>,
-)
-
-/** 私人「逆天改命」的一整包古籤結果。 */
-data class DestinySnapshot(
-    val overallFortuneNumber: Int,
-    val domainFortuneNumbers: Map<FortuneDomain, Int>,
-)
-
 enum class DestinySource {
     PUBLIC_ASTROLOGY,
-    PERSONAL_FORTUNE,
+    PERSONAL_ASTROLOGY,
 }
+
+data class ParallelSkyInfo(
+    val originalDate: LocalDate,
+    val sourceDate: LocalDate,
+    val originalSunLongitude: Double,
+    val alteredSunLongitude: Double,
+    val sunLongitudeDifference: Double,
+    val engineVersion: String,
+)
 
 data class ResolvedDestiny(
     val source: DestinySource,
     val overallGrade: FortuneGrade,
     val overallExplanation: String,
     val domains: Map<FortuneDomain, DomainFortune>,
-    val snapshot: DestinySnapshot? = null,
-    val fortune: FortuneDefinition? = null,
-    val astrologyAudit: AstrologyAudit? = null,
+    val astrologyAudit: AstrologyAudit,
+    val parallelSky: ParallelSkyInfo? = null,
+)
+
+enum class ChangeOutcome {
+    IMPROVED,
+    SIMILAR,
+    WORSENED,
+}
+
+data class DomainChange(
+    val domain: FortuneDomain,
+    val beforeGrade: FortuneGrade,
+    val afterGrade: FortuneGrade,
+    val scoreDelta: Double,
+)
+
+data class DestinyChange(
+    val outcome: ChangeOutcome,
+    val beforeOverallGrade: FortuneGrade,
+    val afterOverallGrade: FortuneGrade,
+    val overallScoreDelta: Double,
+    val domainChanges: Map<FortuneDomain, DomainChange>,
+    val removedFactors: List<String>,
+    val addedFactors: List<String>,
+    val narrative: String,
 )
 
 data class FortuneStats(
@@ -99,7 +118,7 @@ data class FortuneStats(
 data class PersistedFortuneState(
     val todayDate: String? = null,
     val selectedZodiac: ZodiacSign? = null,
-    val todayPersonalDestiny: DestinySnapshot? = null,
+    val todayPersonalSkyDate: LocalDate? = null,
     val todayRerollCount: Int = 0,
     val todaySeen: Boolean = false,
     val stats: FortuneStats = FortuneStats(),
