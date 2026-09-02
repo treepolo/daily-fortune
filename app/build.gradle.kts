@@ -11,8 +11,11 @@ android {
         applicationId = "com.treepolo.dailyfortune"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.1.0"
+        // CI builds use the monotonically increasing GitHub Actions run number so
+        // every distributed debug APK can upgrade the previous one in place.
+        // Local builds fall back to 2 until release versioning is introduced.
+        versionCode = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 2
+        versionName = "0.2.0"
     }
 
     // Debug builds intentionally use one repository-scoped, non-production key so
