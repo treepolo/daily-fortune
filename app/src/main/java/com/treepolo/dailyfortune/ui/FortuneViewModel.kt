@@ -3,13 +3,15 @@ package com.treepolo.dailyfortune.ui
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.treepolo.dailyfortune.data.FortuneCatalog
+import com.treepolo.dailyfortune.data.DailyDestinyProvider
 import com.treepolo.dailyfortune.data.FortuneStore
-import com.treepolo.dailyfortune.model.FortuneDefinition
 import com.treepolo.dailyfortune.model.FortuneStats
+import com.treepolo.dailyfortune.model.ResolvedDestiny
+import com.treepolo.dailyfortune.model.ZodiacSign
 import java.time.LocalDate
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.isActive
@@ -20,8 +22,19 @@ class FortuneViewModel(application: Application) : AndroidViewModel(application)
 
     val uiState = store.state
         .map { persisted ->
+            val date = persisted.todayDate
+                ?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
+                ?: LocalDate.now()
+            val publicDestinies = DailyDestinyProvider.publicDestinies(date)
+            val personalDestiny = persisted.todayPersonalDestiny?.let(DailyDestinyProvider::resolve)
+            val currentDestiny = personalDestiny
+                ?: persisted.selectedZodiac?.let(publicDestinies::get)
+
             FortuneUiState(
-                currentFortune = FortuneCatalog.byNumber(persisted.todayFortuneNumber),
+                selectedZodiac = persisted.selectedZodiac,
+                publicDestinies = publicDestinies,
+                currentDestiny = currentDestiny,
+                hasDefiedFate = personalDestiny != null,
                 todayRerollCount = persisted.todayRerollCount,
                 stats = persisted.stats,
             )
@@ -35,27 +48,46 @@ class FortuneViewModel(application: Application) : AndroidViewModel(application)
     init {
         viewModelScope.launch {
             while (isActive) {
-                store.rolloverIfNeeded(LocalDate.now())
+                val today = LocalDate.now()
+                store.rolloverIfNeeded(today)
+                val persisted = store.state.first()
+                persisted.selectedZodiac?.let { zodiac ->
+                    val publicDestiny = DailyDestinyProvider.publicDestiny(today, zodiac)
+                    store.markTodaySeen(today, publicDestiny.overall.grade)
+                }
                 delay(60_000L)
             }
         }
     }
 
-    fun drawToday() {
+    fun selectZodiac(zodiac: ZodiacSign) {
         viewModelScope.launch {
-            store.drawInitial(LocalDate.now(), FortuneCatalog.random())
+            store.selectZodiac(zodiac)
+            val today = LocalDate.now()
+            val publicDestiny = DailyDestinyProvider.publicDestiny(today, zodiac)
+            store.markTodaySeen(today, publicDestiny.overall.grade)
         }
     }
 
     fun defyFate() {
         viewModelScope.launch {
-            store.reroll(LocalDate.now(), FortuneCatalog.random())
+            val persisted = store.state.first()
+            val zodiac = persisted.selectedZodiac ?: return@launch
+            val today = LocalDate.now()
+            val publicDestiny = DailyDestinyProvider.publicDestiny(today, zodiac)
+            store.markTodaySeen(today, publicDestiny.overall.grade)
+
+            val newDestiny = DailyDestinyProvider.personalReroll()
+            store.reroll(today, newDestiny.snapshot, newDestiny.overall.grade)
         }
     }
 }
 
 data class FortuneUiState(
-    val currentFortune: FortuneDefinition? = null,
+    val selectedZodiac: ZodiacSign? = null,
+    val publicDestinies: Map<ZodiacSign, ResolvedDestiny> = emptyMap(),
+    val currentDestiny: ResolvedDestiny? = null,
+    val hasDefiedFate: Boolean = false,
     val todayRerollCount: Int = 0,
     val stats: FortuneStats = FortuneStats(),
 )
