@@ -18,7 +18,7 @@ class DailyDestinyProviderTest {
 
         assertEquals(first, second)
         assertEquals(DestinySource.PUBLIC_ASTROLOGY, first.source)
-        assertNull(first.fortune)
+        assertNull(first.parallelSky)
         assertNotNull(first.astrologyAudit)
     }
 
@@ -31,12 +31,17 @@ class DailyDestinyProviderTest {
     }
 
     @Test
-    fun privateRerollUsesAncientFortuneAndHasNoAstrologyAudit() {
-        val destiny = DailyDestinyProvider.personalReroll()
+    fun privateRerollUsesRealParallelSkyAndSameAstrologyEngine() {
+        val date = LocalDate.of(2026, 9, 2)
+        val destiny = DailyDestinyProvider.personalReroll(date, ZodiacSign.SCORPIO)
+        val sky = requireNotNull(destiny.parallelSky)
 
-        assertEquals(DestinySource.PERSONAL_FORTUNE, destiny.source)
-        assertNotNull(destiny.snapshot)
-        assertNotNull(destiny.fortune)
-        assertNull(destiny.astrologyAudit)
+        assertEquals(DestinySource.PERSONAL_ASTROLOGY, destiny.source)
+        assertEquals(AstrologyEngine.version, destiny.astrologyAudit.engineVersion)
+        assertEquals(AstrologyEngine.version, sky.engineVersion)
+        assertEquals(date, sky.originalDate)
+        assertTrue(sky.sourceDate.year in 1900..2100)
+        assertTrue("Sun difference was ${sky.sunLongitudeDifference}", sky.sunLongitudeDifference < 0.75)
+        assertEquals(sky.sourceDate, destiny.astrologyAudit.astronomy.date)
     }
 }
