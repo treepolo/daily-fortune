@@ -9,6 +9,20 @@ const METRICS: MetricKey[] = ["OVERALL", ...DOMAINS];
 const METRIC_LABEL: Record<MetricKey, string> = {
   OVERALL: "總運勢", WEALTH: "財運", LOVE: "戀愛", WORK_STUDY: "工作／學業", RELATIONSHIPS: "人際", HEALTH: "健康",
 };
+type JointKey =
+  | "DOMAIN_DAI_JI_AND_DAI_XIONG"
+  | "OVERALL_DAI_XIONG_WITH_DOMAIN_DAI_JI"
+  | "OVERALL_DAI_JI_WITH_DOMAIN_DAI_XIONG";
+const JOINT_KEYS: JointKey[] = [
+  "DOMAIN_DAI_JI_AND_DAI_XIONG",
+  "OVERALL_DAI_XIONG_WITH_DOMAIN_DAI_JI",
+  "OVERALL_DAI_JI_WITH_DOMAIN_DAI_XIONG",
+];
+const JOINT_LABEL: Record<JointKey, string> = {
+  DOMAIN_DAI_JI_AND_DAI_XIONG: "細項同時至少一個大吉＋至少一個大凶",
+  OVERALL_DAI_XIONG_WITH_DOMAIN_DAI_JI: "總體大凶＋至少一個細項大吉",
+  OVERALL_DAI_JI_WITH_DOMAIN_DAI_XIONG: "總體大吉＋至少一個細項大凶",
+};
 type Extreme = { score: number; date: string; zodiac: ZodiacSign };
 type MetricAccumulator = {
   count: number;
@@ -18,6 +32,15 @@ type MetricAccumulator = {
   gradeCounts: Record<FortuneGrade, number>;
   histogram01: Record<string, number>;
 };
+type JointExample = {
+  date: string;
+  zodiac: ZodiacSign;
+  overallScore: number;
+  overallGrade: FortuneGrade;
+  domainScores: Record<FortuneDomain, number>;
+  domainGrades: Record<FortuneDomain, FortuneGrade>;
+};
+type JointAccumulator = { count: number; example: JointExample | null };
 type ShardResult = {
   shardIndex: number;
   shardCount: number;
@@ -27,6 +50,8 @@ type ShardResult = {
   histogramResolution: number;
   metrics: Record<MetricKey, MetricAccumulator>;
   overallGradeCountsByZodiac: Record<ZodiacSign, Record<FortuneGrade, number>>;
+  joint: Record<JointKey, JointAccumulator>;
+  jointCountsByZodiac: Record<ZodiacSign, Record<JointKey, number>>;
 };
 
 function gradeCounts(): Record<FortuneGrade, number> {
@@ -34,6 +59,9 @@ function gradeCounts(): Record<FortuneGrade, number> {
 }
 function metric(): MetricAccumulator {
   return { count: 0, sum: 0, min: null, max: null, gradeCounts: gradeCounts(), histogram01: {} };
+}
+function jointCounts(): Record<JointKey, number> {
+  return Object.fromEntries(JOINT_KEYS.map((key) => [key, 0])) as Record<JointKey, number>;
 }
 
 const files: string[] = [];
@@ -51,6 +79,8 @@ const merged = {
   shardCount: files.length,
   metrics: Object.fromEntries(METRICS.map((key) => [key, metric()])) as Record<MetricKey, MetricAccumulator>,
   overallGradeCountsByZodiac: Object.fromEntries(ZODIACS.map((z) => [z, gradeCounts()])) as Record<ZodiacSign, Record<FortuneGrade, number>>,
+  joint: Object.fromEntries(JOINT_KEYS.map((key) => [key, { count: 0, example: null }])) as Record<JointKey, JointAccumulator>,
+  jointCountsByZodiac: Object.fromEntries(ZODIACS.map((z) => [z, jointCounts()])) as Record<ZodiacSign, Record<JointKey, number>>,
 };
 
 for (const file of files) {
@@ -70,6 +100,11 @@ for (const file of files) {
     }
   }
   for (const z of ZODIACS) for (const g of GRADES) merged.overallGradeCountsByZodiac[z][g] += shard.overallGradeCountsByZodiac[z][g];
+  for (const key of JOINT_KEYS) {
+    merged.joint[key].count += shard.joint[key].count;
+    if (merged.joint[key].example == null && shard.joint[key].example != null) merged.joint[key].example = shard.joint[key].example;
+  }
+  for (const z of ZODIACS) for (const key of JOINT_KEYS) merged.jointCountsByZodiac[z][key] += shard.jointCountsByZodiac[z][key];
 }
 
 function quantile(acc: MetricAccumulator, q: number): number {
@@ -114,6 +149,14 @@ const report = {
     const total = GRADES.reduce((sum, g) => sum + counts[g], 0);
     return [z, Object.fromEntries(GRADES.map((g) => [g, counts[g] * 100 / total]))];
   })),
+  joint: Object.fromEntries(JOINT_KEYS.map((key) => [key, {
+    count: merged.joint[key].count,
+    percentage: merged.joint[key].count * 100 / merged.destinyCount,
+    example: merged.joint[key].example,
+  }])),
+  jointPercentagesByZodiac: Object.fromEntries(ZODIACS.map((z) => [z,
+    Object.fromEntries(JOINT_KEYS.map((key) => [key, merged.jointCountsByZodiac[z][key] * 100 / merged.calendarDays])),
+  ])),
 };
 
 await Deno.writeTextFile("calibration-report.json", JSON.stringify(report, null, 2));
@@ -142,6 +185,28 @@ lines.push(`|---|${GRADES.map(() => "---:").join("|")}|`);
 for (const key of METRICS) {
   const data = report.metrics[key] as any;
   lines.push(`| ${METRIC_LABEL[key]} | ${GRADES.map((g) => `${data.gradePercentages[g].toFixed(4)}%`).join(" | ")} |`);
+}
+lines.push("");
+lines.push("## Joint extreme-grade frequencies");
+lines.push("");
+lines.push("| Condition | Exact count | Percentage of all destinies |");
+lines.push("|---|---:|---:|");
+for (const key of JOINT_KEYS) {
+  const data = report.joint[key] as any;
+  lines.push(`| ${JOINT_LABEL[key]} | ${data.count.toLocaleString("en-US")} | ${data.percentage.toFixed(6)}% |`);
+}
+lines.push("");
+lines.push("### First observed examples");
+lines.push("");
+for (const key of JOINT_KEYS) {
+  const data = report.joint[key] as any;
+  const example = data.example as JointExample | null;
+  if (example == null) {
+    lines.push(`- ${JOINT_LABEL[key]}：1900–2100 未觀測到。`);
+  } else {
+    const domains = DOMAINS.map((domain) => `${METRIC_LABEL[domain]} ${GRADE_LABEL[example.domainGrades[domain]]}(${example.domainScores[domain].toFixed(2)})`).join("；");
+    lines.push(`- ${JOINT_LABEL[key]}：${example.date} / ${example.zodiac}，總體 ${GRADE_LABEL[example.overallGrade]}(${example.overallScore.toFixed(2)})；${domains}。`);
+  }
 }
 lines.push("");
 lines.push("## Exact observed extremes");

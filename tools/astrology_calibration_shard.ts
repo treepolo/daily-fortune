@@ -17,6 +17,15 @@ if (!Number.isInteger(shardIndex) || !Number.isInteger(shardCount) || shardIndex
 const GRADES: FortuneGrade[] = ["DAI_JI", "JI", "XIAO_JI", "PING", "XIAO_XIONG", "XIONG", "DAI_XIONG"];
 type MetricKey = "OVERALL" | FortuneDomain;
 const METRICS: MetricKey[] = ["OVERALL", ...DOMAINS];
+type JointKey =
+  | "DOMAIN_DAI_JI_AND_DAI_XIONG"
+  | "OVERALL_DAI_XIONG_WITH_DOMAIN_DAI_JI"
+  | "OVERALL_DAI_JI_WITH_DOMAIN_DAI_XIONG";
+const JOINT_KEYS: JointKey[] = [
+  "DOMAIN_DAI_JI_AND_DAI_XIONG",
+  "OVERALL_DAI_XIONG_WITH_DOMAIN_DAI_JI",
+  "OVERALL_DAI_JI_WITH_DOMAIN_DAI_XIONG",
+];
 
 type Extreme = { score: number; date: string; zodiac: ZodiacSign };
 type MetricAccumulator = {
@@ -26,6 +35,18 @@ type MetricAccumulator = {
   max: Extreme | null;
   gradeCounts: Record<FortuneGrade, number>;
   histogram01: Record<string, number>;
+};
+type JointExample = {
+  date: string;
+  zodiac: ZodiacSign;
+  overallScore: number;
+  overallGrade: FortuneGrade;
+  domainScores: Record<FortuneDomain, number>;
+  domainGrades: Record<FortuneDomain, FortuneGrade>;
+};
+type JointAccumulator = {
+  count: number;
+  example: JointExample | null;
 };
 
 type ShardResult = {
@@ -37,6 +58,8 @@ type ShardResult = {
   histogramResolution: number;
   metrics: Record<MetricKey, MetricAccumulator>;
   overallGradeCountsByZodiac: Record<ZodiacSign, Record<FortuneGrade, number>>;
+  joint: Record<JointKey, JointAccumulator>;
+  jointCountsByZodiac: Record<ZodiacSign, Record<JointKey, number>>;
 };
 
 function emptyGradeCounts(): Record<FortuneGrade, number> {
@@ -45,6 +68,10 @@ function emptyGradeCounts(): Record<FortuneGrade, number> {
 
 function emptyMetric(): MetricAccumulator {
   return { count: 0, sum: 0, min: null, max: null, gradeCounts: emptyGradeCounts(), histogram01: {} };
+}
+
+function emptyJointCounts(): Record<JointKey, number> {
+  return Object.fromEntries(JOINT_KEYS.map((key) => [key, 0])) as Record<JointKey, number>;
 }
 
 const result: ShardResult = {
@@ -58,6 +85,10 @@ const result: ShardResult = {
   overallGradeCountsByZodiac: Object.fromEntries(
     ZODIACS.map((zodiac) => [zodiac, emptyGradeCounts()]),
   ) as Record<ZodiacSign, Record<FortuneGrade, number>>,
+  joint: Object.fromEntries(JOINT_KEYS.map((key) => [key, { count: 0, example: null }])) as Record<JointKey, JointAccumulator>,
+  jointCountsByZodiac: Object.fromEntries(
+    ZODIACS.map((zodiac) => [zodiac, emptyJointCounts()]),
+  ) as Record<ZodiacSign, Record<JointKey, number>>,
 };
 
 function observe(metric: MetricKey, score: number, date: string, zodiac: ZodiacSign) {
@@ -70,6 +101,13 @@ function observe(metric: MetricKey, score: number, date: string, zodiac: ZodiacS
   if (acc.max == null || score > acc.max.score) acc.max = { score, date, zodiac };
   const bucket = String(Math.round(score * 100));
   acc.histogram01[bucket] = (acc.histogram01[bucket] ?? 0) + 1;
+}
+
+function observeJoint(key: JointKey, example: JointExample) {
+  const acc = result.joint[key];
+  acc.count += 1;
+  if (acc.example == null) acc.example = example;
+  result.jointCountsByZodiac[example.zodiac][key] += 1;
 }
 
 for (let year = 1900 + shardIndex; year <= 2100; year += shardCount) {
@@ -86,6 +124,22 @@ for (let year = 1900 + shardIndex; year <= 2100; year += shardCount) {
       observe("OVERALL", destiny.overallScore, date, zodiac);
       result.overallGradeCountsByZodiac[zodiac][destiny.overallGrade] += 1;
       for (const domain of DOMAINS) observe(domain, destiny.domainScores[domain], date, zodiac);
+
+      const domainGrades = DOMAINS.map((domain) => destiny.domainGrades[domain]);
+      const hasDomainDaiJi = domainGrades.includes("DAI_JI");
+      const hasDomainDaiXiong = domainGrades.includes("DAI_XIONG");
+      const example: JointExample = {
+        date,
+        zodiac,
+        overallScore: destiny.overallScore,
+        overallGrade: destiny.overallGrade,
+        domainScores: destiny.domainScores,
+        domainGrades: destiny.domainGrades,
+      };
+      if (hasDomainDaiJi && hasDomainDaiXiong) observeJoint("DOMAIN_DAI_JI_AND_DAI_XIONG", example);
+      if (destiny.overallGrade === "DAI_XIONG" && hasDomainDaiJi) observeJoint("OVERALL_DAI_XIONG_WITH_DOMAIN_DAI_JI", example);
+      if (destiny.overallGrade === "DAI_JI" && hasDomainDaiXiong) observeJoint("OVERALL_DAI_JI_WITH_DOMAIN_DAI_XIONG", example);
+
       result.destinyCount += 1;
     }
 
