@@ -31,7 +31,7 @@ val prepareKaiFont by tasks.registering {
         if (!zipFile.exists() || zipFile.length() < 1_000_000L) {
             val url = URI("https://www.cns11643.gov.tw/opendata/Fonts_Kai.zip").toURL()
             val connection = url.openConnection().apply {
-                setRequestProperty("User-Agent", "daily-fortune-android-build/0.6.4")
+                setRequestProperty("User-Agent", "daily-fortune-android-build/0.6.5")
                 connectTimeout = 20_000
                 readTimeout = 120_000
             }
@@ -68,7 +68,7 @@ android {
         // CI builds use the monotonically increasing GitHub Actions run number so
         // every distributed APK can upgrade the previous one in place.
         versionCode = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 2
-        versionName = "0.6.4"
+        versionName = "0.6.5"
 
         // Empty values keep the app fully offline with embedded experiment defaults.
         // Production builds can inject these once; future experiment changes happen remotely.
