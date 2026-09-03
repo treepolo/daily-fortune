@@ -3,19 +3,19 @@ package com.treepolo.dailyfortune.ui
 import android.os.SystemClock
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.core.RepeatMode
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
@@ -134,8 +134,6 @@ private fun DailyFortuneScreen(
             return@LaunchedEffect
         }
 
-        // A reroll starts while the previous draw is still the repository's current value.
-        // Wait for an actually new draw before beginning the reveal countdown.
         if (incoming.id == displayedDraw?.id) return@LaunchedEffect
 
         val elapsed = SystemClock.elapsedRealtime() - ceremonyStartedAt
@@ -167,19 +165,16 @@ private fun DailyFortuneScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             TempleHeader(hasDraw = displayedDraw != null)
-
             Spacer(modifier = Modifier.height(24.dp))
 
             when {
                 state.isLoading && displayedDraw == null && !ceremonyActive -> CircularProgressIndicator(
                     color = TempleGold,
                 )
-
                 displayedDraw == null -> EmptyFortune(
                     onInitialDraw = { beginCeremony(onInitialDraw) },
                     isLoading = state.isLoading || ceremonyActive,
                 )
-
                 else -> FortuneResult(
                     draw = displayedDraw!!,
                     onReroll = { beginCeremony(onReroll) },
@@ -196,15 +191,11 @@ private fun DailyFortuneScreen(
                     textAlign = TextAlign.Center,
                 )
             }
-
             Spacer(modifier = Modifier.height(20.dp))
         }
 
         if (ceremonyActive) {
-            DrawCeremonyOverlay(
-                ceremonyKey = ceremonyKey,
-                revealedDraw = impactDraw,
-            )
+            DrawCeremonyOverlay(ceremonyKey = ceremonyKey, revealedDraw = impactDraw)
         }
     }
 }
@@ -238,10 +229,7 @@ private fun TempleHeader(hasDraw: Boolean) {
 }
 
 @Composable
-private fun EmptyFortune(
-    onInitialDraw: () -> Unit,
-    isLoading: Boolean,
-) {
+private fun EmptyFortune(onInitialDraw: () -> Unit, isLoading: Boolean) {
     TemplePanel {
         FortuneTubeIllustration(
             modifier = Modifier
@@ -250,7 +238,6 @@ private fun EmptyFortune(
             shakeDegrees = 0f,
             selectedStickLift = 0f,
         )
-
         Text(
             text = "今天還沒抽籤",
             modifier = Modifier.padding(top = 4.dp),
@@ -275,13 +262,8 @@ private fun EmptyFortune(
 }
 
 @Composable
-private fun FortuneResult(
-    draw: FortuneDraw,
-    onReroll: () -> Unit,
-    isLoading: Boolean,
-) {
+private fun FortuneResult(draw: FortuneDraw, onReroll: () -> Unit, isLoading: Boolean) {
     val visual = visualFor(draw.overallGrade)
-
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(14.dp),
@@ -311,27 +293,21 @@ private fun FortuneResult(
                 fontWeight = FontWeight.Black,
                 letterSpacing = 5.sp,
             )
-
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(1.dp)
                     .background(visual.accent.copy(alpha = 0.42f)),
             )
-
             Spacer(modifier = Modifier.height(10.dp))
             FortuneDomain.entries.forEach { domain ->
                 val score = draw.domainScores.getValue(domain)
-                DomainRow(
-                    label = domain.label,
-                    grade = FortuneGrade.fromScore(score),
-                )
+                DomainRow(label = domain.label, grade = FortuneGrade.fromScore(score))
             }
         }
     }
 
     Spacer(modifier = Modifier.height(20.dp))
-
     TempleActionButton(
         text = if (isLoading) "改命中……" else "逆天改命!!",
         enabled = !isLoading,
@@ -349,11 +325,7 @@ private fun DomainRow(label: String, grade: FortuneGrade) {
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(
-            text = label,
-            color = TempleMutedPaper,
-            style = MaterialTheme.typography.bodyLarge,
-        )
+        Text(text = label, color = TempleMutedPaper, style = MaterialTheme.typography.bodyLarge)
         Text(
             text = grade.label,
             color = gradeVisual.accent,
@@ -365,7 +337,7 @@ private fun DomainRow(label: String, grade: FortuneGrade) {
 }
 
 @Composable
-private fun TemplePanel(content: @Composable Column.() -> Unit) {
+private fun TemplePanel(content: @Composable ColumnScope.() -> Unit) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(14.dp),
@@ -382,11 +354,7 @@ private fun TemplePanel(content: @Composable Column.() -> Unit) {
 }
 
 @Composable
-private fun TempleActionButton(
-    text: String,
-    enabled: Boolean,
-    onClick: () -> Unit,
-) {
+private fun TempleActionButton(text: String, enabled: Boolean, onClick: () -> Unit) {
     Button(
         onClick = onClick,
         enabled = enabled,
@@ -413,10 +381,7 @@ private fun TempleActionButton(
 }
 
 @Composable
-private fun DrawCeremonyOverlay(
-    ceremonyKey: Int,
-    revealedDraw: FortuneDraw?,
-) {
+private fun DrawCeremonyOverlay(ceremonyKey: Int, revealedDraw: FortuneDraw?) {
     var phase by remember(ceremonyKey) { mutableIntStateOf(0) }
     val infinite = rememberInfiniteTransition(label = "fortune-ceremony")
     val shake by infinite.animateFloat(
@@ -466,7 +431,6 @@ private fun DrawCeremonyOverlay(
         contentAlignment = Alignment.Center,
     ) {
         CeremonyRays(alpha = pulse * 0.36f)
-
         Column(
             modifier = Modifier
                 .windowInsetsPadding(WindowInsets.safeDrawing)
@@ -477,9 +441,7 @@ private fun DrawCeremonyOverlay(
                 FortuneTubeIllustration(
                     modifier = Modifier
                         .size(width = 202.dp, height = 270.dp)
-                        .graphicsLayer {
-                            rotationZ = if (phase < 2) shake else shake * 0.28f
-                        },
+                        .graphicsLayer { rotationZ = if (phase < 2) shake else shake * 0.28f },
                     shakeDegrees = shake,
                     selectedStickLift = stickLift,
                 )
@@ -527,10 +489,7 @@ private fun ResultImpact(draw: FortuneDraw) {
 
     LaunchedEffect(draw.id) { started = true }
 
-    Box(
-        modifier = Modifier.size(300.dp),
-        contentAlignment = Alignment.Center,
-    ) {
+    Box(modifier = Modifier.size(300.dp), contentAlignment = Alignment.Center) {
         Canvas(modifier = Modifier.fillMaxSize()) {
             val center = Offset(size.width / 2f, size.height / 2f)
             val radius = size.minDimension * (0.22f + visual.glowStrength * 0.36f * halo)
@@ -547,12 +506,10 @@ private fun ResultImpact(draw: FortuneDraw) {
                 radius = radius,
                 center = center,
             )
-
             if (draw.overallGrade.score >= 5) {
                 val rayAlpha = (0.12f + 0.24f * visual.glowStrength) * halo
                 repeat(18) { index ->
-                    val angle = index * (360f / 18f)
-                    val radians = Math.toRadians(angle.toDouble())
+                    val radians = Math.toRadians(index * (360.0 / 18.0))
                     val inner = size.minDimension * 0.27f
                     val outer = size.minDimension * (0.38f + 0.08f * visual.glowStrength)
                     drawLine(
@@ -686,7 +643,7 @@ private fun CeremonyRays(alpha: Float) {
     Canvas(modifier = Modifier.fillMaxSize()) {
         val center = Offset(size.width / 2f, size.height * 0.46f)
         repeat(24) { index ->
-            val radians = Math.toRadians((index * 15.0))
+            val radians = Math.toRadians(index * 15.0)
             val inner = size.minDimension * 0.27f
             val outer = size.maxDimension * 0.58f
             drawLine(
@@ -720,8 +677,6 @@ private fun TempleBackdrop(grade: FortuneGrade?) {
             ),
     ) {
         Canvas(modifier = Modifier.fillMaxSize()) {
-            // Procedural temple-frame motif. A user-owned/licensed temple photograph can later
-            // sit underneath this layer without changing the interaction architecture.
             val gold = TempleGold.copy(alpha = 0.17f)
             val y = size.height * 0.075f
             drawLine(gold, Offset(0f, y), Offset(size.width * 0.5f, 0f), 4f)
@@ -747,73 +702,38 @@ private data class FortuneVisual(
 
 private fun visualFor(grade: FortuneGrade): FortuneVisual = when (grade) {
     FortuneGrade.DAI_XIONG -> FortuneVisual(
-        backdropGradient = listOf(Color(0xFF030303), Color(0xFF120C0C), Color(0xFF050505)),
-        panelGradient = listOf(Color(0xFF171717), Color(0xFF0A0909)),
-        panel = Color(0xFF121111),
-        accent = Color(0xFF77706B),
-        primaryText = Color(0xFFB9B1A7),
-        secondaryText = Color(0xFF7E7973),
-        aura = Color(0xFF3B3735),
-        glowStrength = 0.08f,
+        listOf(Color(0xFF030303), Color(0xFF120C0C), Color(0xFF050505)),
+        listOf(Color(0xFF171717), Color(0xFF0A0909)), Color(0xFF121111), Color(0xFF77706B),
+        Color(0xFFB9B1A7), Color(0xFF7E7973), Color(0xFF3B3735), 0.08f,
     )
     FortuneGrade.XIONG -> FortuneVisual(
-        backdropGradient = listOf(Color(0xFF120708), Color(0xFF240B0C), Color(0xFF080505)),
-        panelGradient = listOf(Color(0xFF281112), Color(0xFF140B0B)),
-        panel = Color(0xFF211010),
-        accent = Color(0xFF9B6B61),
-        primaryText = Color(0xFFD2B3A8),
-        secondaryText = Color(0xFFA98F88),
-        aura = Color(0xFF6A322F),
-        glowStrength = 0.16f,
+        listOf(Color(0xFF120708), Color(0xFF240B0C), Color(0xFF080505)),
+        listOf(Color(0xFF281112), Color(0xFF140B0B)), Color(0xFF211010), Color(0xFF9B6B61),
+        Color(0xFFD2B3A8), Color(0xFFA98F88), Color(0xFF6A322F), 0.16f,
     )
     FortuneGrade.XIAO_XIONG -> FortuneVisual(
-        backdropGradient = listOf(Color(0xFF25100E), Color(0xFF3A1511), Color(0xFF130908)),
-        panelGradient = listOf(Color(0xFF401B16), Color(0xFF24110E)),
-        panel = Color(0xFF351712),
-        accent = Color(0xFFB98062),
-        primaryText = Color(0xFFE0C1A8),
-        secondaryText = Color(0xFFB89F90),
-        aura = Color(0xFF8C4A35),
-        glowStrength = 0.25f,
+        listOf(Color(0xFF25100E), Color(0xFF3A1511), Color(0xFF130908)),
+        listOf(Color(0xFF401B16), Color(0xFF24110E)), Color(0xFF351712), Color(0xFFB98062),
+        Color(0xFFE0C1A8), Color(0xFFB89F90), Color(0xFF8C4A35), 0.25f,
     )
     FortuneGrade.PING -> FortuneVisual(
-        backdropGradient = listOf(TempleInk, TempleDeepRed, Color(0xFF120908)),
-        panelGradient = listOf(Color(0xFF5A1A14), Color(0xFF35100E)),
-        panel = Color(0xFF49150F),
-        accent = Color(0xFFC6A56A),
-        primaryText = TemplePaper,
-        secondaryText = TempleMutedPaper,
-        aura = TempleGold,
-        glowStrength = 0.34f,
+        listOf(TempleInk, TempleDeepRed, Color(0xFF120908)),
+        listOf(Color(0xFF5A1A14), Color(0xFF35100E)), Color(0xFF49150F), Color(0xFFC6A56A),
+        TemplePaper, TempleMutedPaper, TempleGold, 0.34f,
     )
     FortuneGrade.XIAO_JI -> FortuneVisual(
-        backdropGradient = listOf(Color(0xFF3D0908), Color(0xFF741710), Color(0xFF1A0806)),
-        panelGradient = listOf(Color(0xFF7A2117), Color(0xFF4A130D)),
-        panel = Color(0xFF671B13),
-        accent = Color(0xFFE4B95C),
-        primaryText = Color(0xFFFFE7B0),
-        secondaryText = Color(0xFFE4C995),
-        aura = Color(0xFFE6B64D),
-        glowStrength = 0.52f,
+        listOf(Color(0xFF3D0908), Color(0xFF741710), Color(0xFF1A0806)),
+        listOf(Color(0xFF7A2117), Color(0xFF4A130D)), Color(0xFF671B13), Color(0xFFE4B95C),
+        Color(0xFFFFE7B0), Color(0xFFE4C995), Color(0xFFE6B64D), 0.52f,
     )
     FortuneGrade.JI -> FortuneVisual(
-        backdropGradient = listOf(Color(0xFF5B0D08), Color(0xFFA12C15), Color(0xFF271006)),
-        panelGradient = listOf(Color(0xFFA8371D), Color(0xFF64150E)),
-        panel = Color(0xFF842419),
-        accent = Color(0xFFFFD46D),
-        primaryText = Color(0xFFFFF0BE),
-        secondaryText = Color(0xFFF2D79D),
-        aura = Color(0xFFFFC846),
-        glowStrength = 0.76f,
+        listOf(Color(0xFF5B0D08), Color(0xFFA12C15), Color(0xFF271006)),
+        listOf(Color(0xFFA8371D), Color(0xFF64150E)), Color(0xFF842419), Color(0xFFFFD46D),
+        Color(0xFFFFF0BE), Color(0xFFF2D79D), Color(0xFFFFC846), 0.76f,
     )
     FortuneGrade.DAI_JI -> FortuneVisual(
-        backdropGradient = listOf(Color(0xFF7B1208), Color(0xFFB93818), Color(0xFF4A140B), Color(0xFF17104A)),
-        panelGradient = listOf(Color(0xFFB83B1E), Color(0xFF712014), Color(0xFF3B173D)),
-        panel = Color(0xFF912817),
-        accent = Color(0xFFFFE38A),
-        primaryText = Color.White,
-        secondaryText = Color(0xFFFFE0A8),
-        aura = Color(0xFFFFE16A),
-        glowStrength = 1f,
+        listOf(Color(0xFF7B1208), Color(0xFFB93818), Color(0xFF4A140B), Color(0xFF17104A)),
+        listOf(Color(0xFFB83B1E), Color(0xFF712014), Color(0xFF3B173D)), Color(0xFF912817), Color(0xFFFFE38A),
+        Color.White, Color(0xFFFFE0A8), Color(0xFFFFE16A), 1f,
     )
 }
