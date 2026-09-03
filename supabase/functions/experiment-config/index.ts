@@ -56,9 +56,9 @@ export default {
       );
 
       return json({
+        ...resolved.config,
         config_id: configId,
         assignments: resolved.assignments,
-        ...resolved.config,
       });
     } catch (error) {
       console.error(error);
