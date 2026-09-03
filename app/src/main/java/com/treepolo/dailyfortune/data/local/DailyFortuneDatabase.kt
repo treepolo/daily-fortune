@@ -9,13 +9,9 @@ import kotlinx.coroutines.Dispatchers
 
 @Database(
     entities = [
-        LocalAstronomySampleEntity::class,
-        LocalDestinyEntity::class,
-        LocalAstrologyFactorEntity::class,
-        LocalDailyFortuneEntity::class,
-        LocalRerollEventEntity::class,
-        LocalFateSampleEventEntity::class,
-        LocalBindingEntity::class,
+        LocalFortuneDrawEntity::class,
+        LocalDailyFortuneStateEntity::class,
+        LocalAnalyticsEventEntity::class,
     ],
     version = 1,
     exportSchema = true,
@@ -30,7 +26,7 @@ abstract class DailyFortuneDatabase : RoomDatabase() {
             instance ?: Room.databaseBuilder(
                 context.applicationContext,
                 DailyFortuneDatabase::class.java,
-                "daily-fortune.db",
+                "daily-fortune-v2.db",
             )
                 .setDriver(BundledSQLiteDriver())
                 .setQueryCoroutineContext(Dispatchers.IO)
