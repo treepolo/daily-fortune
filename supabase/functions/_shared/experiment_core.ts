@@ -36,12 +36,23 @@ export async function resolveExperiments(
 
   for (const experiment of active) {
     if (experiment.rollout <= 0) continue;
-    const bucket = await stableUnitInterval(`${experiment.salt}:${experiment.id}:${installationId}`);
-    if (bucket >= experiment.rollout) continue;
+
+    // Enrollment and variant selection deliberately use independent hashes. This lets an
+    // experiment ramp from (for example) 20% to 50% traffic without moving already-enrolled
+    // installations between A/B/C/... variants. Variant weights should remain immutable for
+    // one experiment version; changing the treatment allocation should use a new experiment id/salt.
+    const enrollmentBucket = await stableUnitInterval(
+      `${experiment.salt}:${experiment.id}:enrollment:${installationId}`,
+    );
+    if (enrollmentBucket >= experiment.rollout) continue;
+
+    const variantBucket = await stableUnitInterval(
+      `${experiment.salt}:${experiment.id}:variant:${installationId}`,
+    );
     const experimentVariants = variants
       .filter((variant) => variant.experiment_id === experiment.id)
       .sort((a, b) => a.variant_id.localeCompare(b.variant_id));
-    const variant = chooseVariant(experimentVariants, bucket / experiment.rollout);
+    const variant = chooseVariant(experimentVariants, variantBucket);
     if (!variant) continue;
     config = deepMerge(config, variant.treatment);
     assignments.push({ experiment_id: experiment.id, variant_id: variant.variant_id });
