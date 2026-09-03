@@ -1,7 +1,6 @@
 package com.treepolo.dailyfortune.data
 
 import android.content.Context
-import com.treepolo.dailyfortune.BuildConfig
 import com.treepolo.dailyfortune.data.local.DailyFortuneDatabase
 import com.treepolo.dailyfortune.data.local.LocalAuthority
 import com.treepolo.dailyfortune.data.local.LocalDailyFortuneEntity
@@ -33,7 +32,7 @@ interface DestinyAuthority {
     suspend fun reroll(date: LocalDate, zodiac: ZodiacSign): ResolvedDestiny
 }
 
-/** Debug-only source. Release builds must use the future Supabase authority and never silently fall back. */
+/** Embedded real-astronomy authority used by the sideload app until central Supabase is wired. */
 class EmbeddedDevelopmentDestinyAuthority : DestinyAuthority {
     override val publicAuthority = LocalAuthority.DEVELOPMENT_EMBEDDED
     override val personalAuthority = LocalAuthority.PERSONAL_LOCAL
@@ -48,6 +47,7 @@ class EmbeddedDevelopmentDestinyAuthority : DestinyAuthority {
     }
 }
 
+/** Reserved for the future central-only mode once its network client is actually connected. */
 class UnavailableDestinyAuthority : DestinyAuthority {
     override val publicAuthority = LocalAuthority.CENTRAL
     override val personalAuthority = LocalAuthority.CENTRAL
@@ -149,10 +149,21 @@ class LocalFortuneRepository(
             return FortuneRepositorySnapshot(null, emptyMap(), null, null, 0, loadStats())
         }
         ensurePublicCached(date)
-        val publicRows = dao.getPublicDestinies(date.toString())
-        val public = publicRows.associate { row ->
-            ZodiacSign.valueOf(row.zodiacSign) to requireNotNull(loadDestiny(row))
+        return localSnapshot(date)
+    }
+
+    /** Reads only already-persisted state and never invokes the authority. */
+    suspend fun localSnapshot(date: LocalDate): FortuneRepositorySnapshot {
+        val zodiac = settings.currentZodiac()
+        val public = dao.getPublicDestinies(date.toString()).mapNotNull { row ->
+            val sign = runCatching { ZodiacSign.valueOf(row.zodiacSign) }.getOrNull() ?: return@mapNotNull null
+            val destiny = loadDestiny(row) ?: return@mapNotNull null
+            sign to destiny
+        }.toMap()
+        if (zodiac == null) {
+            return FortuneRepositorySnapshot(null, public, null, null, 0, loadStats())
         }
+
         val day = dao.getDailyFortune(date.toString())
         val current = day?.currentPersonalDestinyId?.let { loadDestinyById(it) }
             ?: public[zodiac]
@@ -257,9 +268,8 @@ class LocalFortuneRepository(
     private suspend fun loadStats(): FortuneStats {
         val aggregate = dao.getStatsAggregate()
         val rerollDays = dao.getRerollDayCounts()
-        val totalRerolls = rerollDays.sumOf { it.rerollCount }.toInt()
-        return FortuneStats(
-            totalRerolls = totalRerolls,
+        val roomStats = FortuneStats(
+            totalRerolls = rerollDays.sumOf { it.rerollCount }.toInt(),
             totalDrawDays = dao.getDrawDayCount().toInt(),
             maxDailyRerolls = rerollDays.maxOfOrNull { it.rerollCount }?.toInt() ?: 0,
             totalDraws = aggregate.totalDraws.toInt(),
@@ -267,21 +277,24 @@ class LocalFortuneRepository(
             nonXiongDraws = aggregate.nonXiongDraws.toInt(),
             daiXiongDraws = aggregate.daiXiongDraws.toInt(),
         )
+        val legacy = settings.legacyStats() ?: return roomStats
+        return FortuneStats(
+            totalRerolls = maxOf(roomStats.totalRerolls, legacy.totalRerolls),
+            totalDrawDays = maxOf(roomStats.totalDrawDays, legacy.totalDrawDays),
+            maxDailyRerolls = maxOf(roomStats.maxDailyRerolls, legacy.maxDailyRerolls),
+            totalDraws = maxOf(roomStats.totalDraws, legacy.totalDraws),
+            daiJiDraws = maxOf(roomStats.daiJiDraws, legacy.daiJiDraws),
+            nonXiongDraws = maxOf(roomStats.nonXiongDraws, legacy.nonXiongDraws),
+            daiXiongDraws = maxOf(roomStats.daiXiongDraws, legacy.daiXiongDraws),
+        )
     }
 
     companion object {
-        fun create(context: Context): LocalFortuneRepository {
-            val authority: DestinyAuthority = if (BuildConfig.DEBUG) {
-                EmbeddedDevelopmentDestinyAuthority()
-            } else {
-                UnavailableDestinyAuthority()
-            }
-            return LocalFortuneRepository(
-                dao = DailyFortuneDatabase.get(context).fortuneDao(),
-                settings = UserSettingsStore(context),
-                authority = authority,
-            )
-        }
+        fun create(context: Context): LocalFortuneRepository = LocalFortuneRepository(
+            dao = DailyFortuneDatabase.get(context).fortuneDao(),
+            settings = UserSettingsStore(context),
+            authority = EmbeddedDevelopmentDestinyAuthority(),
+        )
 
         fun publicId(date: LocalDate, zodiac: ZodiacSign): String = "public:$date:${zodiac.name}"
     }
