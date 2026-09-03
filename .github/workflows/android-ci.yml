@@ -17,11 +17,11 @@ jobs:
       - uses: denoland/setup-deno@v2
         with:
           deno-version: v2.x
-      - name: Check Supabase astrology backend
+      - name: Check research backend
         run: |
-          deno check supabase/functions/daily-destiny/index.ts
-          deno check supabase/functions/_shared/check_kotlin_parity.ts
-          deno test supabase/functions/_shared/astrology_v1_test.ts
+          deno check supabase/functions/experiment-config/index.ts
+          deno check supabase/functions/analytics-events/index.ts
+          deno test supabase/functions/_shared/experiment_core_test.ts
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
@@ -33,9 +33,10 @@ jobs:
       - name: Unit tests
         run: ./gradlew :app:testDebugUnitTest --stacktrace
       - name: Build signed release APK
+        env:
+          DAILY_FORTUNE_CONFIG_URL: ${{ secrets.DAILY_FORTUNE_CONFIG_URL }}
+          DAILY_FORTUNE_ANALYTICS_URL: ${{ secrets.DAILY_FORTUNE_ANALYTICS_URL }}
         run: ./gradlew :app:assembleRelease --stacktrace
-      - name: Verify Kotlin and Deno Astrology Engine parity
-        run: deno run --allow-read supabase/functions/_shared/check_kotlin_parity.ts app/build/astrology-kotlin-fixture.json
       - name: Upload release APK
         if: github.event_name == 'push'
         uses: actions/upload-artifact@v4
