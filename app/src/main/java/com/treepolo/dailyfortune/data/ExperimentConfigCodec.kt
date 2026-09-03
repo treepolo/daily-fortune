@@ -58,6 +58,9 @@ object ExperimentConfigCodec {
         return array.toString()
     }
 
+    fun assignmentsFromJson(json: String): List<ExperimentAssignment> =
+        parseAssignments(JSONArray(json))
+
     private fun parseDistribution(value: JSONObject): GradeDistribution = GradeDistribution(
         id = value.getString("id"),
         probabilities = value.getJSONArray("probabilities").toDoubleList(),
