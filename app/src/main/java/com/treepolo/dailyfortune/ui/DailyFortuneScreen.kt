@@ -573,6 +573,11 @@ private fun FortunePaper(
     onRevealEnd: () -> Unit,
 ) {
     val visual = visualFor(draw.overallGrade)
+    val latestRevealDelta = remember { mutableStateOf(onRevealDelta) }
+    val latestRevealEnd = remember { mutableStateOf(onRevealEnd) }
+    latestRevealDelta.value = onRevealDelta
+    latestRevealEnd.value = onRevealEnd
+
     val minHeight = 94f
     val fullHeight = 548f
     val visibleHeight = minHeight + (fullHeight - minHeight) * revealFraction
@@ -635,11 +640,11 @@ private fun FortunePaper(
                     )
                     .pointerInput(Unit) {
                         detectDragGestures(
-                            onDragEnd = onRevealEnd,
-                            onDragCancel = onRevealEnd,
+                            onDragEnd = { latestRevealEnd.value() },
+                            onDragCancel = { latestRevealEnd.value() },
                         ) { change, amount ->
                             change.consume()
-                            onRevealDelta(amount.y / 390f)
+                            latestRevealDelta.value(amount.y / 390f)
                         }
                     },
                 contentAlignment = Alignment.Center,
