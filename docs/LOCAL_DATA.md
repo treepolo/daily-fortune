@@ -1,50 +1,110 @@
-# Local data architecture
+# 本機資料模型 v2
 
-The Android client treats Room/SQLite as the durable local source of truth for fate data and history.
+## 1. 目標
 
-## Ownership
+本機資料只負責：
 
-DataStore (`fortune_state`) keeps small user settings and retained pre-Room aggregate counters. The existing `selected_zodiac` key is preserved across the Room rollout. Legacy values are retained rather than deleted so an upgrade can still recover user-visible aggregate statistics if Room history is empty or temporarily unavailable.
+- 保存每日最後一籤
+- 保存每次實際抽籤歷史
+- 離線時保存待上傳研究事件
+- 保存匿名 installation ID 與最後一份有效 Remote Config cache
 
-Room database: `daily-fortune.db`.
+前端不顯示個人統計，也不依賴歷史統計表。
 
-Tables:
+## 2. `fortune_draws_v2`
 
-- `local_astronomy_samples`: one versioned 97-sample astronomical snapshot per source day.
-- `local_destinies`: resolved public or personal astrology result, five domain scores/grades/explanations, engine/ephemeris versions and parallel-sky metadata.
-- `local_astrology_factors`: complete factor audit and five-domain contributions for each destiny.
-- `local_daily_fortunes`: effective zodiac, public destiny pointer, current private worldline and reroll count for a day.
-- `local_reroll_events`: immutable local reroll history, including before/after destiny IDs and sync state.
-- `local_fate_sample_events`: immutable samples used to derive statistics; replacing the current destiny never deletes history.
-- `local_bindings`: local-first storage reserved for binding a fate result and its short note.
+每次初抽與每次「逆天改命!!」都新增一列，不覆寫舊列。
 
-## Authority and offline rules
+欄位：
 
-`DestinyAuthority` separates local persistence from the source of destiny data.
+- `id`: UUID primary key
+- `fortuneDate`: 裝置當地日期 `YYYY-MM-DD`
+- `drawIndex`: 當日從 1 開始遞增；1 為初抽
+- `drawType`: `INITIAL` / `REROLL`
+- `wealthScore`: 1～7
+- `loveScore`: 1～7
+- `workStudyScore`: 1～7
+- `relationshipsScore`: 1～7
+- `healthScore`: 1～7
+- `rawAverage`: 五項算術平均
+- `overallScore`: 1～7
+- `configId`: 實際使用的 resolved config
+- `assignmentsJson`: experiment/variant assignments snapshot
+- `distributionId`: 本次 draw 使用的 distribution
+- `samplingProfileId`: 本次 sampling/correlation profile
+- `overallRuleId`: 本次 overall mapping rule
+- `createdAtEpochMillis`: UTC epoch millis
 
-The currently distributed sideload APK, for both debug and release build types, uses `EmbeddedDevelopmentDestinyAuthority` until the Supabase client is actually wired into Android. It calculates the real astronomy locally with the same app astrology engine and stores provenance explicitly as `DEVELOPMENT_EMBEDDED` / `LOCAL_DEVELOPMENT`. These rows are never labeled as centrally synchronized results.
+唯一索引：`fortuneDate + drawIndex`。
 
-`UnavailableDestinyAuthority` remains reserved for a future central-only mode. It must not be selected merely because the APK is a release build; doing so would make an otherwise functional sideload release unable to generate the current day when no central cache exists.
+## 3. `daily_fortune_state_v2`
 
-If an authority request fails in the future, the UI first restores the locally persisted zodiac, statistics, cached public destiny, and current personal destiny where available, then surfaces the error. A transport failure must not make persisted data appear reset.
+每個 local date 一列，作為目前 UI 指標。
 
-## Multiple rerolls
+欄位：
 
-Each reroll event stores both `beforeDestinyId` and `afterDestinyId`. The comparison shown after the second or later reroll is therefore:
+- `fortuneDate`: primary key
+- `currentDrawId`: 指向 `fortune_draws_v2.id`
+- `drawCount`: 當日總抽籤次數
+- `firstDrawAtEpochMillis`
+- `updatedAtEpochMillis`
 
-`worldline immediately before the button press -> newly generated worldline`
+App 重開後只需讀當日 state，再讀 current draw。
 
-It is not always compared with the original public destiny.
+## 4. `analytics_events_v2`
 
-## Statistics
+離線優先的研究事件 queue。
 
-Room statistics are derived from immutable events:
+欄位：
 
-- one `PUBLIC_VIEW` sample ID per date;
-- one `PERSONAL_REROLL` sample per reroll event;
-- reroll totals and max-per-day from `local_reroll_events`;
-- grade counts/rates from `local_fate_sample_events`.
+- `eventId`: UUID primary key
+- `installationId`
+- `sessionId`
+- `eventName`
+- `eventEpochMillis`
+- `localDateTime`
+- `timezoneId`
+- `appVersion`
+- `configId`
+- `assignmentsJson`
+- `payloadJson`
+- `uploadState`: `PENDING` / `FAILED`
+- `attemptCount`
 
-For upgrade compatibility, any retained pre-Room aggregate statistic is compared with the Room-derived value and the larger value is used for display. This prevents a storage migration from making an existing user's counters go backwards while Room remains the source of detailed event history.
+成功送達後刪除 queue row；研究後端保存完整 canonical event。
 
-This keeps discarded worldlines in history and makes future cloud reconciliation auditable.
+## 5. Shared preferences
+
+少量不適合 Room 的安裝層狀態存在 private SharedPreferences：
+
+- `installation_id`
+- `cached_remote_config_json`
+- `cached_remote_config_saved_at`
+
+這些不是使用者可見設定。
+
+## 6. 舊版資料隔離
+
+舊版占星產品使用 `daily-fortune.db`，新版使用獨立的 `daily-fortune-v2.db`。
+
+採用新資料庫檔案的原因：
+
+- 舊版與新版的 fortune 語意不同，沒有可靠的一對一資料轉換。
+- 不需要在一次更新中對複雜的舊占星 schema 做破壞性 migration。
+- 舊資料庫檔案可原封不動保留，降低升級時資料庫打不開的風險。
+
+新版 runtime 完全不查詢、不寫入 `daily-fortune.db`。第一次執行新制版本時，`daily-fortune-v2.db` 從空狀態建立；當天結果從使用者第一次新制抽籤開始。
+
+之後若確認舊資料已無保留需求，可在另一個明確版本處理 legacy database cleanup；本輪不自動刪除。
+
+## 7. 一致性規則
+
+一次 draw 寫入在單一 Room transaction 中完成：
+
+1. insert `fortune_draws_v2`
+2. upsert `daily_fortune_state_v2`
+3. insert 對應 `initial_draw` / `reroll` analytics event
+
+這可避免 UI 已顯示新籤但事件或每日 pointer 沒有落盤。
+
+研究上傳與 draw transaction 分離；網路失敗不能回滾使用者已完成的抽籤。

@@ -2,300 +2,148 @@ package com.treepolo.dailyfortune.data
 
 import android.content.Context
 import com.treepolo.dailyfortune.data.local.DailyFortuneDatabase
-import com.treepolo.dailyfortune.data.local.LocalAuthority
-import com.treepolo.dailyfortune.data.local.LocalDailyFortuneEntity
-import com.treepolo.dailyfortune.data.local.LocalDestinyEntity
-import com.treepolo.dailyfortune.data.local.LocalDestinyMapper
-import com.treepolo.dailyfortune.data.local.LocalFateSampleEventEntity
+import com.treepolo.dailyfortune.data.local.LocalDailyFortuneStateEntity
 import com.treepolo.dailyfortune.data.local.LocalFortuneDao
-import com.treepolo.dailyfortune.data.local.LocalRerollEventEntity
-import com.treepolo.dailyfortune.data.local.LocalSampleKind
-import com.treepolo.dailyfortune.data.local.LocalSyncState
-import com.treepolo.dailyfortune.model.DestinyChange
-import com.treepolo.dailyfortune.model.FortuneStats
-import com.treepolo.dailyfortune.model.ResolvedDestiny
-import com.treepolo.dailyfortune.model.ZodiacSign
+import com.treepolo.dailyfortune.data.local.LocalFortuneDrawEntity
+import com.treepolo.dailyfortune.model.DrawType
+import com.treepolo.dailyfortune.model.FortuneDomain
+import com.treepolo.dailyfortune.model.FortuneDraw
+import com.treepolo.dailyfortune.model.FortuneGrade
 import java.time.LocalDate
 import java.util.UUID
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import kotlinx.coroutines.withContext
-
-class DestinyUnavailableException(message: String) : IllegalStateException(message)
-
-interface DestinyAuthority {
-    val publicAuthority: LocalAuthority
-    val personalAuthority: LocalAuthority
-    val localSyncState: LocalSyncState
-    suspend fun publicDestinies(date: LocalDate): Map<ZodiacSign, ResolvedDestiny>
-    suspend fun reroll(date: LocalDate, zodiac: ZodiacSign): ResolvedDestiny
-}
-
-/** Embedded real-astronomy authority used by the sideload app until central Supabase is wired. */
-class EmbeddedDevelopmentDestinyAuthority : DestinyAuthority {
-    override val publicAuthority = LocalAuthority.DEVELOPMENT_EMBEDDED
-    override val personalAuthority = LocalAuthority.PERSONAL_LOCAL
-    override val localSyncState = LocalSyncState.LOCAL_DEVELOPMENT
-
-    override suspend fun publicDestinies(date: LocalDate) = withContext(Dispatchers.Default) {
-        DailyDestinyProvider.publicDestinies(date)
-    }
-
-    override suspend fun reroll(date: LocalDate, zodiac: ZodiacSign) = withContext(Dispatchers.Default) {
-        DailyDestinyProvider.personalReroll(date, zodiac)
-    }
-}
-
-/** Reserved for the future central-only mode once its network client is actually connected. */
-class UnavailableDestinyAuthority : DestinyAuthority {
-    override val publicAuthority = LocalAuthority.CENTRAL
-    override val personalAuthority = LocalAuthority.CENTRAL
-    override val localSyncState = LocalSyncState.PENDING
-
-    override suspend fun publicDestinies(date: LocalDate): Map<ZodiacSign, ResolvedDestiny> =
-        throw DestinyUnavailableException("今日中央天命尚未快取，且目前無法連線取得。")
-
-    override suspend fun reroll(date: LocalDate, zodiac: ZodiacSign): ResolvedDestiny =
-        throw DestinyUnavailableException("逆天改命需要中央服務，目前無法取得。")
-}
+import org.json.JSONObject
 
 data class FortuneRepositorySnapshot(
-    val selectedZodiac: ZodiacSign?,
-    val publicDestinies: Map<ZodiacSign, ResolvedDestiny>,
-    val currentDestiny: ResolvedDestiny?,
-    val destinyChange: DestinyChange?,
-    val todayRerollCount: Int,
-    val stats: FortuneStats,
+    val currentDraw: FortuneDraw?,
 )
 
 class LocalFortuneRepository(
     private val dao: LocalFortuneDao,
-    private val settings: ZodiacSettings,
-    private val authority: DestinyAuthority,
+    private val research: ResearchManager,
+    private val engine: FortuneEngine = FortuneEngine(),
     private val nowMillis: () -> Long = System::currentTimeMillis,
 ) {
     private val writeMutex = Mutex()
 
-    suspend fun prepare() = settings.cleanupLegacyState()
+    suspend fun startSession() = research.startSession()
 
-    suspend fun selectZodiac(date: LocalDate, zodiac: ZodiacSign) = writeMutex.withLock {
-        settings.selectFirstZodiac(zodiac)
-        ensurePublicCached(date)
-        markTodaySeenLocked(date, settings.currentZodiac() ?: zodiac)
-    }
+    suspend fun endSession() = research.endSession()
 
-    suspend fun markTodaySeen(date: LocalDate) = writeMutex.withLock {
-        val zodiac = settings.currentZodiac() ?: return@withLock
-        ensurePublicCached(date)
-        markTodaySeenLocked(date, zodiac)
-    }
+    suspend fun refreshExperimentConfig() = research.refreshRemoteConfig()
 
-    suspend fun reroll(date: LocalDate): DestinyChange = writeMutex.withLock {
-        val zodiac = settings.currentZodiac()
-            ?: throw IllegalStateException("Zodiac must be selected before reroll")
-        ensurePublicCached(date)
-        markTodaySeenLocked(date, zodiac)
-
-        val day = requireNotNull(dao.getDailyFortune(date.toString()))
-        val beforeId = day.currentPersonalDestinyId ?: publicId(date, zodiac)
-        val before = loadDestinyById(beforeId)
-            ?: throw IllegalStateException("Current destiny $beforeId is missing from Room")
-        val after = authority.reroll(date, zodiac)
-        val afterId = UUID.randomUUID().toString()
-        persistDestiny(afterId, date, after, authority.personalAuthority)
-
-        val drawIndex = dao.getRerollCount(date.toString()) + 1
-        val now = nowMillis()
-        val sourceDate = requireNotNull(after.parallelSky).sourceDate
-        val eventId = UUID.randomUUID().toString()
-        dao.insertRerollEvent(
-            LocalRerollEventEntity(
-                localId = eventId,
-                serverId = null,
-                fortuneDate = date.toString(),
-                zodiacSign = zodiac.name,
-                drawIndex = drawIndex,
-                beforeDestinyId = beforeId,
-                afterDestinyId = afterId,
-                sourceDate = sourceDate.toString(),
-                syncState = authority.localSyncState.name,
-                createdAtEpochMillis = now,
-            ),
-        )
-        dao.upsertDailyFortune(
-            day.copy(
-                currentPersonalDestinyId = afterId,
-                rerollCount = drawIndex,
-                updatedAtEpochMillis = now,
-            ),
-        )
-        dao.insertFateSample(
-            LocalFateSampleEventEntity(
-                sampleId = "reroll:$eventId",
-                fortuneDate = date.toString(),
-                sampleKind = LocalSampleKind.PERSONAL_REROLL.name,
-                destinyId = afterId,
-                overallGrade = after.overallGrade.name,
-                createdAtEpochMillis = now,
-            ),
-        )
-        AstrologyComparison.compare(before, after)
-    }
+    suspend fun flushResearchEvents() = research.flushPendingEvents()
 
     suspend fun snapshot(date: LocalDate): FortuneRepositorySnapshot {
-        val zodiac = settings.currentZodiac()
-        if (zodiac == null) {
-            return FortuneRepositorySnapshot(null, emptyMap(), null, null, 0, loadStats())
-        }
-        ensurePublicCached(date)
-        return localSnapshot(date)
+        val state = dao.getDailyState(date.toString()) ?: return FortuneRepositorySnapshot(null)
+        val draw = dao.getDraw(state.currentDrawId)?.toModel()
+        return FortuneRepositorySnapshot(draw)
     }
 
-    /** Reads only already-persisted state and never invokes the authority. */
-    suspend fun localSnapshot(date: LocalDate): FortuneRepositorySnapshot {
-        val zodiac = settings.currentZodiac()
-        val public = dao.getPublicDestinies(date.toString()).mapNotNull { row ->
-            val sign = runCatching { ZodiacSign.valueOf(row.zodiacSign) }.getOrNull() ?: return@mapNotNull null
-            val destiny = loadDestiny(row) ?: return@mapNotNull null
-            sign to destiny
-        }.toMap()
-        if (zodiac == null) {
-            return FortuneRepositorySnapshot(null, public, null, null, 0, loadStats())
+    suspend fun initialDraw(date: LocalDate): FortuneDraw = writeMutex.withLock {
+        val existing = dao.getDailyState(date.toString())
+        if (existing != null) {
+            return@withLock requireNotNull(dao.getDraw(existing.currentDrawId)).toModel()
         }
-
-        val day = dao.getDailyFortune(date.toString())
-        val current = day?.currentPersonalDestinyId?.let { loadDestinyById(it) }
-            ?: public[zodiac]
-        val latest = dao.getLatestReroll(date.toString())
-        val change = if (latest != null && latest.afterDestinyId == day?.currentPersonalDestinyId) {
-            val before = loadDestinyById(latest.beforeDestinyId)
-            val after = loadDestinyById(latest.afterDestinyId)
-            if (before != null && after != null) AstrologyComparison.compare(before, after) else null
-        } else {
-            null
-        }
-        return FortuneRepositorySnapshot(
-            selectedZodiac = zodiac,
-            publicDestinies = public,
-            currentDestiny = current,
-            destinyChange = change,
-            todayRerollCount = day?.rerollCount ?: 0,
-            stats = loadStats(),
-        )
+        persistDraw(date, DrawType.INITIAL, null)
     }
 
-    suspend fun rerollHistory(date: LocalDate): List<LocalRerollEventEntity> =
-        dao.getRerollHistory(date.toString())
+    suspend fun reroll(date: LocalDate): FortuneDraw = writeMutex.withLock {
+        val existing = dao.getDailyState(date.toString())
+            ?: throw IllegalStateException("今天尚未抽籤")
+        persistDraw(date, DrawType.REROLL, existing)
+    }
 
-    private suspend fun markTodaySeenLocked(date: LocalDate, zodiac: ZodiacSign) {
-        val publicDestinyId = publicId(date, zodiac)
-        val publicDestiny = loadDestinyById(publicDestinyId)
-            ?: throw IllegalStateException("Public destiny $publicDestinyId is missing")
+    suspend fun drawHistory(date: LocalDate): List<FortuneDraw> =
+        dao.getDrawHistory(date.toString()).map { it.toModel() }
+
+    private suspend fun persistDraw(
+        date: LocalDate,
+        type: DrawType,
+        existingState: LocalDailyFortuneStateEntity?,
+    ): FortuneDraw {
+        val config = research.currentConfig()
+        val generated = engine.draw(type, config)
         val now = nowMillis()
-        val existing = dao.getDailyFortune(date.toString())
-        if (existing == null) {
-            dao.upsertDailyFortune(
-                LocalDailyFortuneEntity(
-                    fortuneDate = date.toString(),
-                    zodiacSign = zodiac.name,
-                    publicDestinyId = publicDestinyId,
-                    currentPersonalDestinyId = null,
-                    rerollCount = 0,
-                    firstSeenAtEpochMillis = now,
-                    updatedAtEpochMillis = now,
-                ),
-            )
-        }
-        dao.insertFateSample(
-            LocalFateSampleEventEntity(
-                sampleId = "public:${date}",
-                fortuneDate = date.toString(),
-                sampleKind = LocalSampleKind.PUBLIC_VIEW.name,
-                destinyId = publicDestinyId,
-                overallGrade = publicDestiny.overallGrade.name,
-                createdAtEpochMillis = now,
-            ),
+        val drawIndex = (existingState?.drawCount ?: 0) + 1
+        val id = UUID.randomUUID().toString()
+        val assignmentsJson = ExperimentConfigCodec.assignmentsToJson(config.assignments)
+        val draw = LocalFortuneDrawEntity(
+            id = id,
+            fortuneDate = date.toString(),
+            drawIndex = drawIndex,
+            drawType = type.name,
+            wealthScore = generated.domainScores.getValue(FortuneDomain.WEALTH),
+            loveScore = generated.domainScores.getValue(FortuneDomain.LOVE),
+            workStudyScore = generated.domainScores.getValue(FortuneDomain.WORK_STUDY),
+            relationshipsScore = generated.domainScores.getValue(FortuneDomain.RELATIONSHIPS),
+            healthScore = generated.domainScores.getValue(FortuneDomain.HEALTH),
+            rawAverage = generated.rawAverage,
+            overallScore = generated.overallGrade.score,
+            configId = config.configId,
+            assignmentsJson = assignmentsJson,
+            distributionId = generated.distributionId,
+            samplingProfileId = generated.samplingProfileId,
+            overallRuleId = generated.overallRuleId,
+            createdAtEpochMillis = now,
         )
-    }
-
-    private suspend fun ensurePublicCached(date: LocalDate) {
-        val cached = dao.getPublicDestinies(date.toString())
-        if (cached.size == 12 && cached.map { it.zodiacSign }.toSet().size == 12) return
-
-        val generated = authority.publicDestinies(date)
-        require(generated.keys.toSet() == ZodiacSign.entries.toSet()) {
-            "Authority must return exactly all 12 zodiac signs"
-        }
-        var samplesSaved = false
-        generated.forEach { (zodiac, destiny) ->
-            val bundle = LocalDestinyMapper.toBundle(
-                id = publicId(date, zodiac),
-                fortuneDate = date,
-                destiny = destiny,
-                authority = authority.publicAuthority,
-                createdAtEpochMillis = nowMillis(),
-            )
-            if (!samplesSaved) {
-                dao.upsertAstronomySamples(bundle.samples)
-                samplesSaved = true
-            }
-            dao.replaceDestiny(bundle.destiny, bundle.factors)
-        }
-    }
-
-    private suspend fun persistDestiny(
-        id: String,
-        fortuneDate: LocalDate,
-        destiny: ResolvedDestiny,
-        localAuthority: LocalAuthority,
-    ) {
-        val bundle = LocalDestinyMapper.toBundle(id, fortuneDate, destiny, localAuthority, nowMillis())
-        dao.upsertAstronomySamples(bundle.samples)
-        dao.replaceDestiny(bundle.destiny, bundle.factors)
-    }
-
-    private suspend fun loadDestinyById(id: String): ResolvedDestiny? =
-        dao.getDestiny(id)?.let { loadDestiny(it) }
-
-    private suspend fun loadDestiny(row: LocalDestinyEntity): ResolvedDestiny? {
-        val factors = dao.getFactors(row.id)
-        val samples = dao.getAstronomySamples(row.sourceDate, row.ephemerisVersion)
-        if (samples.isEmpty()) return null
-        return LocalDestinyMapper.fromRows(row, factors, samples)
-    }
-
-    private suspend fun loadStats(): FortuneStats {
-        val aggregate = dao.getStatsAggregate()
-        val rerollDays = dao.getRerollDayCounts()
-        val roomStats = FortuneStats(
-            totalRerolls = rerollDays.sumOf { it.rerollCount }.toInt(),
-            totalDrawDays = dao.getDrawDayCount().toInt(),
-            maxDailyRerolls = rerollDays.maxOfOrNull { it.rerollCount }?.toInt() ?: 0,
-            totalDraws = aggregate.totalDraws.toInt(),
-            daiJiDraws = aggregate.daiJiDraws.toInt(),
-            nonXiongDraws = aggregate.nonXiongDraws.toInt(),
-            daiXiongDraws = aggregate.daiXiongDraws.toInt(),
+        val state = LocalDailyFortuneStateEntity(
+            fortuneDate = date.toString(),
+            currentDrawId = id,
+            drawCount = drawIndex,
+            firstDrawAtEpochMillis = existingState?.firstDrawAtEpochMillis ?: now,
+            updatedAtEpochMillis = now,
         )
-        val legacy = settings.legacyStats() ?: return roomStats
-        return FortuneStats(
-            totalRerolls = maxOf(roomStats.totalRerolls, legacy.totalRerolls),
-            totalDrawDays = maxOf(roomStats.totalDrawDays, legacy.totalDrawDays),
-            maxDailyRerolls = maxOf(roomStats.maxDailyRerolls, legacy.maxDailyRerolls),
-            totalDraws = maxOf(roomStats.totalDraws, legacy.totalDraws),
-            daiJiDraws = maxOf(roomStats.daiJiDraws, legacy.daiJiDraws),
-            nonXiongDraws = maxOf(roomStats.nonXiongDraws, legacy.nonXiongDraws),
-            daiXiongDraws = maxOf(roomStats.daiXiongDraws, legacy.daiXiongDraws),
-        )
+        val payload = JSONObject()
+            .put("fortune_date", date.toString())
+            .put("draw_index", drawIndex)
+            .put("draw_type", type.name)
+            .put("wealth", draw.wealthScore)
+            .put("love", draw.loveScore)
+            .put("work_study", draw.workStudyScore)
+            .put("relationships", draw.relationshipsScore)
+            .put("health", draw.healthScore)
+            .put("raw_average", draw.rawAverage)
+            .put("overall", draw.overallScore)
+            .put("distribution_id", draw.distributionId)
+            .put("sampling_profile_id", draw.samplingProfileId)
+            .put("overall_rule_id", draw.overallRuleId)
+        val eventName = if (type == DrawType.INITIAL) "initial_draw" else "reroll"
+        val analyticsEvent = research.eventEntity(eventName, payload, config)
+        dao.persistDraw(draw, state, analyticsEvent)
+        return draw.toModel()
     }
+
+    private fun LocalFortuneDrawEntity.toModel(): FortuneDraw = FortuneDraw(
+        id = id,
+        fortuneDate = LocalDate.parse(fortuneDate),
+        drawIndex = drawIndex,
+        drawType = DrawType.valueOf(drawType),
+        domainScores = mapOf(
+            FortuneDomain.WEALTH to wealthScore,
+            FortuneDomain.LOVE to loveScore,
+            FortuneDomain.WORK_STUDY to workStudyScore,
+            FortuneDomain.RELATIONSHIPS to relationshipsScore,
+            FortuneDomain.HEALTH to healthScore,
+        ),
+        rawAverage = rawAverage,
+        overallGrade = FortuneGrade.fromScore(overallScore),
+        configId = configId,
+        assignments = runCatching { ExperimentConfigCodec.assignmentsFromJson(assignmentsJson) }.getOrDefault(emptyList()),
+        distributionId = distributionId,
+        samplingProfileId = samplingProfileId,
+        overallRuleId = overallRuleId,
+        createdAtEpochMillis = createdAtEpochMillis,
+    )
 
     companion object {
-        fun create(context: Context): LocalFortuneRepository = LocalFortuneRepository(
-            dao = DailyFortuneDatabase.get(context).fortuneDao(),
-            settings = UserSettingsStore(context),
-            authority = EmbeddedDevelopmentDestinyAuthority(),
-        )
-
-        fun publicId(date: LocalDate, zodiac: ZodiacSign): String = "public:$date:${zodiac.name}"
+        fun create(context: Context): LocalFortuneRepository {
+            val dao = DailyFortuneDatabase.get(context).fortuneDao()
+            return LocalFortuneRepository(
+                dao = dao,
+                research = ResearchManager(context, dao),
+            )
+        }
     }
 }

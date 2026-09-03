@@ -1,6 +1,9 @@
-[functions.daily-destiny]
-# This endpoint accepts two caller types: authenticated app users and the scheduled Cron request.
-# Cron has no user JWT, so platform JWT verification is disabled and the handler performs its own
-# authorization: user requests are verified through Supabase Auth; Cron must present the matching
-# DAILY_DESTINY_CRON_SECRET header. A publishable API key alone is never enough to run an action.
+[functions.experiment-config]
+# Anonymous installations fetch only a resolved treatment. The function reads tables
+# with the server-side service role; clients never receive database credentials.
+verify_jwt = false
+
+[functions.analytics-events]
+# Research events are pseudonymous installation/session events and are accepted through
+# this validating ingestion endpoint. Database tables themselves remain server-side only.
 verify_jwt = false
