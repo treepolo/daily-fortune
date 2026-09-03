@@ -7,6 +7,7 @@ import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.treepolo.dailyfortune.model.FortuneStats
 import com.treepolo.dailyfortune.model.ZodiacSign
 import java.io.IOException
 import kotlinx.coroutines.flow.Flow
@@ -21,9 +22,10 @@ interface ZodiacSettings {
     suspend fun currentZodiac(): ZodiacSign?
     suspend fun selectFirstZodiac(zodiac: ZodiacSign)
     suspend fun cleanupLegacyState()
+    suspend fun legacyStats(): FortuneStats? = null
 }
 
-/** DataStore now owns only small user settings. Fate/history data lives in Room. */
+/** DataStore owns small user settings and preserves pre-Room aggregate statistics for upgrade safety. */
 class UserSettingsStore(private val context: Context) : ZodiacSettings {
     override val selectedZodiac: Flow<ZodiacSign?> = context.settingsDataStore.data
         .catch { error ->
@@ -46,41 +48,51 @@ class UserSettingsStore(private val context: Context) : ZodiacSettings {
 
     override suspend fun cleanupLegacyState() {
         context.settingsDataStore.edit { preferences ->
-            if (preferences[Keys.roomMigrationCompleted] == true) return@edit
-
-            Keys.legacyStringKeys.forEach(preferences::remove)
-            Keys.legacyIntKeys.forEach(preferences::remove)
-            Keys.legacyBooleanKeys.forEach(preferences::remove)
+            // Keep all legacy values. They cost almost nothing and let newer builds recover aggregate
+            // statistics when the Room event history is empty or unavailable after an upgrade.
             preferences[Keys.roomMigrationCompleted] = true
         }
+    }
+
+    override suspend fun legacyStats(): FortuneStats? {
+        val preferences = context.settingsDataStore.data
+            .catch { error ->
+                if (error is IOException) emit(emptyPreferences()) else throw error
+            }
+            .first()
+
+        val hasLegacyStats = listOf(
+            Keys.totalRerolls,
+            Keys.totalDrawDays,
+            Keys.maxDailyRerolls,
+            Keys.totalDraws,
+            Keys.daiJiDraws,
+            Keys.nonXiongDraws,
+            Keys.daiXiongDraws,
+        ).any { preferences[it] != null }
+        if (!hasLegacyStats) return null
+
+        return FortuneStats(
+            totalRerolls = preferences[Keys.totalRerolls] ?: 0,
+            totalDrawDays = preferences[Keys.totalDrawDays] ?: 0,
+            maxDailyRerolls = preferences[Keys.maxDailyRerolls] ?: 0,
+            totalDraws = preferences[Keys.totalDraws] ?: 0,
+            daiJiDraws = preferences[Keys.daiJiDraws] ?: 0,
+            nonXiongDraws = preferences[Keys.nonXiongDraws] ?: 0,
+            daiXiongDraws = preferences[Keys.daiXiongDraws] ?: 0,
+        )
     }
 
     private object Keys {
         val selectedZodiac = stringPreferencesKey("selected_zodiac")
         val roomMigrationCompleted = booleanPreferencesKey("room_state_initialized_v1")
 
-        val legacyStringKeys = listOf(
-            stringPreferencesKey("today_date"),
-            stringPreferencesKey("today_personal_sky_date"),
-        )
-        val legacyBooleanKeys = listOf(
-            booleanPreferencesKey("today_seen"),
-        )
-        val legacyIntKeys = listOf(
-            intPreferencesKey("today_reroll_count"),
-            intPreferencesKey("total_rerolls"),
-            intPreferencesKey("total_draw_days"),
-            intPreferencesKey("max_daily_rerolls"),
-            intPreferencesKey("total_draws"),
-            intPreferencesKey("dai_ji_draws"),
-            intPreferencesKey("non_xiong_draws"),
-            intPreferencesKey("dai_xiong_draws"),
-            intPreferencesKey("today_personal_overall"),
-            intPreferencesKey("today_personal_wealth"),
-            intPreferencesKey("today_personal_love"),
-            intPreferencesKey("today_personal_work_study"),
-            intPreferencesKey("today_personal_relationships"),
-            intPreferencesKey("today_personal_health"),
-        )
+        val totalRerolls = intPreferencesKey("total_rerolls")
+        val totalDrawDays = intPreferencesKey("total_draw_days")
+        val maxDailyRerolls = intPreferencesKey("max_daily_rerolls")
+        val totalDraws = intPreferencesKey("total_draws")
+        val daiJiDraws = intPreferencesKey("dai_ji_draws")
+        val nonXiongDraws = intPreferencesKey("non_xiong_draws")
+        val daiXiongDraws = intPreferencesKey("dai_xiong_draws")
     }
 }
