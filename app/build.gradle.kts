@@ -1,3 +1,6 @@
+import java.net.URI
+import java.util.zip.ZipInputStream
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
@@ -26,7 +29,7 @@ val prepareKaiFont by tasks.registering {
         val zipFile = cacheDir.resolve("Fonts_Kai.zip")
 
         if (!zipFile.exists() || zipFile.length() < 1_000_000L) {
-            val url = java.net.URI("https://www.cns11643.gov.tw/opendata/Fonts_Kai.zip").toURL()
+            val url = URI("https://www.cns11643.gov.tw/opendata/Fonts_Kai.zip").toURL()
             val connection = url.openConnection().apply {
                 setRequestProperty("User-Agent", "daily-fortune-android-build/0.6.2")
                 connectTimeout = 20_000
@@ -38,7 +41,7 @@ val prepareKaiFont by tasks.registering {
         }
 
         var extracted = false
-        java.util.zip.ZipInputStream(zipFile.inputStream().buffered()).use { zip ->
+        ZipInputStream(zipFile.inputStream().buffered()).use { zip ->
             while (true) {
                 val entry = zip.nextEntry ?: break
                 if (!entry.isDirectory && entry.name.endsWith("TW-Kai-98_1.ttf")) {
