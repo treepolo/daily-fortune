@@ -9,6 +9,8 @@ import com.treepolo.dailyfortune.model.DrawType
 import com.treepolo.dailyfortune.model.FortuneDomain
 import com.treepolo.dailyfortune.model.FortuneDraw
 import com.treepolo.dailyfortune.model.FortuneGrade
+import com.treepolo.dailyfortune.model.PityConfig
+import com.treepolo.dailyfortune.model.PityScope
 import java.time.LocalDate
 import java.util.UUID
 import kotlinx.coroutines.sync.Mutex
@@ -64,9 +66,23 @@ class LocalFortuneRepository(
         existingState: LocalDailyFortuneStateEntity?,
     ): FortuneDraw {
         val config = research.currentConfig()
-        val generated = engine.draw(type, config)
-        val now = nowMillis()
         val drawIndex = (existingState?.drawCount ?: 0) + 1
+        val rerollIndex = if (type == DrawType.REROLL) existingState?.drawCount ?: 0 else 0
+        val pityMisses = if (type == DrawType.REROLL) {
+            config.dynamicProbability.pity
+                ?.takeIf { it.enabled }
+                ?.let { consecutivePityMisses(date, it) }
+                ?: 0
+        } else {
+            0
+        }
+        val generated = engine.draw(
+            type = type,
+            config = config,
+            rerollIndex = rerollIndex,
+            consecutivePityMisses = pityMisses,
+        )
+        val now = nowMillis()
         val id = UUID.randomUUID().toString()
         val assignmentsJson = ExperimentConfigCodec.assignmentsToJson(config.assignments)
         val draw = LocalFortuneDrawEntity(
@@ -98,6 +114,7 @@ class LocalFortuneRepository(
         val payload = JSONObject()
             .put("fortune_date", date.toString())
             .put("draw_index", drawIndex)
+            .put("reroll_index", rerollIndex)
             .put("draw_type", type.name)
             .put("wealth", draw.wealthScore)
             .put("love", draw.loveScore)
@@ -109,10 +126,33 @@ class LocalFortuneRepository(
             .put("distribution_id", draw.distributionId)
             .put("sampling_profile_id", draw.samplingProfileId)
             .put("overall_rule_id", draw.overallRuleId)
+            .put("probability_policy_id", generated.probabilityPolicyId)
+            .put("pity_counter", generated.pityCounter)
+            .put("guarantee_triggered", generated.guaranteeTriggered)
         val eventName = if (type == DrawType.INITIAL) "initial_draw" else "reroll"
         val analyticsEvent = research.eventEntity(eventName, payload, config)
         dao.persistDraw(draw, state, analyticsEvent)
         return draw.toModel()
+    }
+
+    private suspend fun consecutivePityMisses(date: LocalDate, pity: PityConfig): Int {
+        var misses = 0
+        for (draw in dao.getDrawHistory(date.toString()).asReversed()) {
+            if (draw.drawType != DrawType.REROLL.name) break
+            val succeeded = when (pity.scope) {
+                PityScope.OVERALL_AT_LEAST -> draw.overallScore >= pity.successScore
+                PityScope.ANY_DOMAIN_AT_LEAST -> listOf(
+                    draw.wealthScore,
+                    draw.loveScore,
+                    draw.workStudyScore,
+                    draw.relationshipsScore,
+                    draw.healthScore,
+                ).any { it >= pity.successScore }
+            }
+            if (succeeded) break
+            misses += 1
+        }
+        return misses
     }
 
     private fun LocalFortuneDrawEntity.toModel(): FortuneDraw = FortuneDraw(
