@@ -376,7 +376,7 @@ private fun DrawStage(
                     shadow = Shadow(Color.Black.copy(alpha = 0.38f), Offset(0f, 1f), 2f),
                 ),
             )
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(28.dp))
             InteractiveFortuneTube(
                 enabled = enabled,
                 onStickCommitted = onStickCommitted,
@@ -409,13 +409,10 @@ private fun RolledPaperSlip(modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun SlipEmphasisLines(
-    active: Boolean,
-    modifier: Modifier = Modifier,
-) {
+private fun SlipEmphasisLines(modifier: Modifier = Modifier) {
     Canvas(modifier = modifier.size(width = 64.dp, height = 48.dp)) {
-        val alpha = if (active) 0.98f else 0.76f
-        val stroke = if (active) 3.2f else 2.6f
+        val alpha = 0.98f
+        val stroke = 3.2f
         drawLine(
             color = GoldBright.copy(alpha = alpha),
             start = Offset(size.width * 0.28f, size.height * 0.88f),
@@ -466,24 +463,23 @@ private fun InteractiveFortuneTube(
             SlipPose(0, 20, 0f),
         )
     }
-    val suggestedIndex = 8
-    val focusIndex = activeIndex ?: suggestedIndex
-    val focusPose = poses[focusIndex]
-    val focusLift = if (activeIndex != null) 10f + 150f * dragProgress else 0f
 
     Box(
         modifier = Modifier.size(width = 228.dp, height = 360.dp),
         contentAlignment = Alignment.TopCenter,
     ) {
-        SlipEmphasisLines(
-            active = activeIndex != null,
-            modifier = Modifier
-                .offset(
-                    x = focusPose.x.dp,
-                    y = (focusPose.y - 52f - focusLift).dp,
-                )
-                .zIndex(0f),
-        )
+        activeIndex?.let { focusIndex ->
+            val focusPose = poses[focusIndex]
+            val focusLift = 10f + 150f * dragProgress
+            SlipEmphasisLines(
+                modifier = Modifier
+                    .offset(
+                        x = focusPose.x.dp,
+                        y = (focusPose.y - 52f - focusLift).dp,
+                    )
+                    .zIndex(0f),
+            )
+        }
 
         poses.forEachIndexed { index, pose ->
             val isActive = activeIndex == index
