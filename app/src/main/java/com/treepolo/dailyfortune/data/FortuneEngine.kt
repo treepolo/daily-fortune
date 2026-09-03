@@ -6,6 +6,8 @@ import com.treepolo.dailyfortune.model.FortuneGrade
 import com.treepolo.dailyfortune.model.GradeDistribution
 import com.treepolo.dailyfortune.model.OverallRule
 import com.treepolo.dailyfortune.model.OverallRuleType
+import com.treepolo.dailyfortune.model.PityConfig
+import com.treepolo.dailyfortune.model.PityScope
 import com.treepolo.dailyfortune.model.ResolvedExperimentConfig
 import com.treepolo.dailyfortune.model.RoundingMethod
 import com.treepolo.dailyfortune.model.SamplingConfig
@@ -28,31 +30,104 @@ data class GeneratedFortune(
     val distributionId: String,
     val samplingProfileId: String,
     val overallRuleId: String,
+    val probabilityPolicyId: String,
+    val pityCounter: Int,
+    val guaranteeTriggered: Boolean,
 )
 
 class FortuneEngine(
     private val random: Random = Random.Default,
 ) {
-    fun draw(type: DrawType, config: ResolvedExperimentConfig): GeneratedFortune {
+    fun draw(
+        type: DrawType,
+        config: ResolvedExperimentConfig,
+        rerollIndex: Int = 0,
+        consecutivePityMisses: Int = 0,
+    ): GeneratedFortune {
         require(config.isValid()) { "Invalid experiment config" }
-        val distribution = when (type) {
-            DrawType.INITIAL -> config.initialDistribution
-            DrawType.REROLL -> config.rerollDistribution
-        }
+        val distribution = effectiveDistribution(type, config, rerollIndex)
         val uniforms = sampleUniforms(config.sampling)
-        val scores = FortuneDomain.entries.mapIndexed { index, domain ->
+        val sampledScores = FortuneDomain.entries.mapIndexed { index, domain ->
             domain to mapUniformToScore(uniforms[index], distribution)
         }.toMap()
-        val average = scores.values.average()
+
+        val pity = config.dynamicProbability.pity
+        val shouldGuarantee = type == DrawType.REROLL &&
+            pity?.enabled == true &&
+            consecutivePityMisses >= pity.afterConsecutiveMisses
+        val finalScores = if (shouldGuarantee) {
+            enforcePity(sampledScores, pity!!, config.overallRule)
+        } else {
+            sampledScores
+        }
+        val average = finalScores.values.average()
         val overall = FortuneGrade.fromScore(resolveOverallScore(average, config.overallRule))
+        val guaranteeTriggered = shouldGuarantee && finalScores != sampledScores
+
         return GeneratedFortune(
-            domainScores = scores,
+            domainScores = finalScores,
             rawAverage = average,
             overallGrade = overall,
             distributionId = distribution.id,
             samplingProfileId = config.sampling.profileId,
             overallRuleId = config.overallRule.id,
+            probabilityPolicyId = config.dynamicProbability.policyId,
+            pityCounter = consecutivePityMisses,
+            guaranteeTriggered = guaranteeTriggered,
         )
+    }
+
+    private fun effectiveDistribution(
+        type: DrawType,
+        config: ResolvedExperimentConfig,
+        rerollIndex: Int,
+    ): GradeDistribution {
+        if (type == DrawType.INITIAL) return config.initialDistribution
+        val scheduled = config.dynamicProbability.rerollSchedule.firstOrNull { band ->
+            rerollIndex >= band.minRerollIndexInclusive &&
+                (band.maxRerollIndexInclusive == null || rerollIndex <= band.maxRerollIndexInclusive)
+        }
+        return scheduled?.distribution ?: config.rerollDistribution
+    }
+
+    private fun enforcePity(
+        rawScores: Map<FortuneDomain, Int>,
+        pity: PityConfig,
+        overallRule: OverallRule,
+    ): Map<FortuneDomain, Int> {
+        if (meetsPityCondition(rawScores, pity, overallRule)) return rawScores
+        val mutable = rawScores.toMutableMap()
+        when (pity.scope) {
+            PityScope.ANY_DOMAIN_AT_LEAST -> {
+                val candidates = FortuneDomain.entries.filter { mutable.getValue(it) < pity.successScore }
+                if (candidates.isNotEmpty()) {
+                    val chosen = candidates[random.nextInt(candidates.size)]
+                    mutable[chosen] = pity.successScore
+                }
+            }
+            PityScope.OVERALL_AT_LEAST -> {
+                var guard = 0
+                while (!meetsPityCondition(mutable, pity, overallRule) && guard < 64) {
+                    val candidates = FortuneDomain.entries.filter { mutable.getValue(it) < 7 }
+                    if (candidates.isEmpty()) break
+                    val minimum = candidates.minOf { mutable.getValue(it) }
+                    val lowest = candidates.filter { mutable.getValue(it) == minimum }
+                    val chosen = lowest[random.nextInt(lowest.size)]
+                    mutable[chosen] = mutable.getValue(chosen) + 1
+                    guard += 1
+                }
+            }
+        }
+        return mutable
+    }
+
+    fun meetsPityCondition(
+        scores: Map<FortuneDomain, Int>,
+        pity: PityConfig,
+        overallRule: OverallRule,
+    ): Boolean = when (pity.scope) {
+        PityScope.ANY_DOMAIN_AT_LEAST -> scores.values.any { it >= pity.successScore }
+        PityScope.OVERALL_AT_LEAST -> resolveOverallScore(scores.values.average(), overallRule) >= pity.successScore
     }
 
     private fun sampleUniforms(config: SamplingConfig): List<Double> = when (config.mode) {
@@ -149,7 +224,6 @@ class FortuneEngine(
 
     private fun normalCdf(value: Double): Double = 0.5 * (1.0 + erf(value / sqrt(2.0)))
 
-    // Abramowitz-Stegun 7.1.26; sufficient for turning Gaussian samples into copula uniforms.
     private fun erf(value: Double): Double {
         val sign = if (value < 0.0) -1.0 else 1.0
         val x = abs(value)

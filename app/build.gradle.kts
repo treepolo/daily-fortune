@@ -22,7 +22,7 @@ android {
         // CI builds use the monotonically increasing GitHub Actions run number so
         // every distributed APK can upgrade the previous one in place.
         versionCode = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 2
-        versionName = "0.5.0"
+        versionName = "0.6.0"
 
         // Empty values keep the app fully offline with embedded experiment defaults.
         // Production builds can inject these once; future experiment changes happen remotely.

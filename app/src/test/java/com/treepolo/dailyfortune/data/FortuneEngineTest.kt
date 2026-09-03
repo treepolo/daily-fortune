@@ -1,17 +1,22 @@
 package com.treepolo.dailyfortune.data
 
 import com.treepolo.dailyfortune.model.DrawType
+import com.treepolo.dailyfortune.model.DynamicProbabilityConfig
 import com.treepolo.dailyfortune.model.FortuneGrade
 import com.treepolo.dailyfortune.model.GradeDistribution
 import com.treepolo.dailyfortune.model.OverallRule
 import com.treepolo.dailyfortune.model.OverallRuleSegment
 import com.treepolo.dailyfortune.model.OverallRuleType
+import com.treepolo.dailyfortune.model.PityConfig
+import com.treepolo.dailyfortune.model.PityScope
 import com.treepolo.dailyfortune.model.ResolvedExperimentConfig
+import com.treepolo.dailyfortune.model.RerollDistributionBand
 import com.treepolo.dailyfortune.model.RoundingMethod
 import com.treepolo.dailyfortune.model.SamplingConfig
 import com.treepolo.dailyfortune.model.SamplingMode
 import kotlin.random.Random
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -58,13 +63,65 @@ class FortuneEngineTest {
     }
 
     @Test
-    fun embeddedDefaultProducesFiveLegalScores() {
+    fun embeddedDefaultProducesFiveLegalScoresWithoutPity() {
         repeat(100) {
             val draw = engine.draw(DrawType.INITIAL, ResolvedExperimentConfig.embeddedDefault())
             assertEquals(5, draw.domainScores.size)
             assertTrue(draw.domainScores.values.all { it in 1..7 })
             assertTrue(draw.overallGrade.score in 1..7)
+            assertFalse(draw.guaranteeTriggered)
+            assertEquals("static-v1", draw.probabilityPolicyId)
         }
+    }
+
+    @Test
+    fun rerollScheduleCanReplaceTheEffectiveDistributionByIndex() {
+        val allDaiJi = GradeDistribution("all-dai-ji", listOf(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0))
+        val config = ResolvedExperimentConfig.embeddedDefault().copy(
+            dynamicProbability = DynamicProbabilityConfig(
+                policyId = "schedule-test",
+                rerollSchedule = listOf(
+                    RerollDistributionBand(
+                        minRerollIndexInclusive = 3,
+                        maxRerollIndexInclusive = null,
+                        distribution = allDaiJi,
+                    ),
+                ),
+            ),
+        )
+        val beforeBand = engine.draw(DrawType.REROLL, config, rerollIndex = 2)
+        val inBand = engine.draw(DrawType.REROLL, config, rerollIndex = 3)
+
+        assertEquals("uniform-v1", beforeBand.distributionId)
+        assertEquals("all-dai-ji", inBand.distributionId)
+        assertTrue(inBand.domainScores.values.all { it == 7 })
+    }
+
+    @Test
+    fun pityCanGuaranteeAtLeastOneTargetDomainAfterMissThreshold() {
+        val allDaiXiong = GradeDistribution("all-dai-xiong", listOf(1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0))
+        val config = ResolvedExperimentConfig.embeddedDefault().copy(
+            rerollDistribution = allDaiXiong,
+            dynamicProbability = DynamicProbabilityConfig(
+                policyId = "pity-test",
+                pity = PityConfig(
+                    enabled = true,
+                    afterConsecutiveMisses = 2,
+                    successScore = 7,
+                    scope = PityScope.ANY_DOMAIN_AT_LEAST,
+                ),
+            ),
+        )
+        val draw = engine.draw(
+            DrawType.REROLL,
+            config,
+            rerollIndex = 3,
+            consecutivePityMisses = 2,
+        )
+
+        assertTrue(draw.guaranteeTriggered)
+        assertTrue(draw.domainScores.values.any { it == 7 })
+        assertEquals(2, draw.pityCounter)
     }
 
     @Test

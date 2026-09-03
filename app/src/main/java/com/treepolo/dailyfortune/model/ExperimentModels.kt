@@ -49,9 +49,33 @@ data class OverallRule(
     val segments: List<OverallRuleSegment> = emptyList(),
 )
 
+data class RerollDistributionBand(
+    val minRerollIndexInclusive: Int,
+    val maxRerollIndexInclusive: Int?,
+    val distribution: GradeDistribution,
+)
+
+enum class PityScope {
+    OVERALL_AT_LEAST,
+    ANY_DOMAIN_AT_LEAST,
+}
+
+data class PityConfig(
+    val enabled: Boolean = false,
+    val afterConsecutiveMisses: Int = 0,
+    val successScore: Int = 7,
+    val scope: PityScope = PityScope.OVERALL_AT_LEAST,
+)
+
+data class DynamicProbabilityConfig(
+    val policyId: String = "static-v1",
+    val rerollSchedule: List<RerollDistributionBand> = emptyList(),
+    val pity: PityConfig? = null,
+)
+
 data class VisualExperimentConfig(
     val staticVariantId: String = "baseline",
-    val revealVariantId: String = "none",
+    val revealVariantId: String = "interactive-paper-v1",
 )
 
 data class ResolvedExperimentConfig(
@@ -61,6 +85,7 @@ data class ResolvedExperimentConfig(
     val rerollDistribution: GradeDistribution,
     val sampling: SamplingConfig,
     val overallRule: OverallRule,
+    val dynamicProbability: DynamicProbabilityConfig = DynamicProbabilityConfig(),
     val visual: VisualExperimentConfig = VisualExperimentConfig(),
 ) {
     fun isValid(): Boolean =
@@ -68,7 +93,8 @@ data class ResolvedExperimentConfig(
             initialDistribution.isValid() &&
             rerollDistribution.isValid() &&
             sampling.profileId.isNotBlank() &&
-            overallRule.id.isNotBlank()
+            overallRule.id.isNotBlank() &&
+            dynamicProbability.policyId.isNotBlank()
 
     companion object {
         fun embeddedDefault(): ResolvedExperimentConfig {
@@ -85,6 +111,11 @@ data class ResolvedExperimentConfig(
                 overallRule = OverallRule(
                     id = "floor-v1",
                     type = OverallRuleType.FLOOR,
+                ),
+                dynamicProbability = DynamicProbabilityConfig(
+                    policyId = "static-v1",
+                    rerollSchedule = emptyList(),
+                    pity = PityConfig(enabled = false),
                 ),
             )
         }
