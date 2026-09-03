@@ -63,9 +63,9 @@ Fortune Engine 接收一份已解析的 `ResolvedExperimentConfig`：
 支援兩種基礎模式：
 
 1. `INDEPENDENT`：五細項獨立抽樣。
-2. `GAUSSIAN_COPULA`：利用五維相關矩陣產生具相關性的 uniform samples，再依各自 cumulative distribution 映射到 1～7。
+2. `GAUSSIAN_COPULA`：利用五維相關矩陣產生具相關性的 uniform samples，再依 cumulative distribution 映射到 1～7。
 
-目前預設使用 `INDEPENDENT`。相關模式存在的目的，是讓未來可以直接以 Remote Config 測「無相關、整體正相關、特定領域相關」等 treatment，而無需發布新版 App。
+目前預設使用 `INDEPENDENT`。相關模式讓未來可以直接以 Remote Config 測「無相關、整體正相關、特定領域相關」等 treatment，而無需發布新版 App。
 
 相關矩陣必須驗證：
 
@@ -94,13 +94,13 @@ Fortune Engine 接收一份已解析的 `ResolvedExperimentConfig`：
 
 ## 5. Local persistence
 
-Room 只保存 v2 所需的三類資料：
+新版 Room 使用獨立資料庫檔案 `daily-fortune-v2.db`，只保存三類資料：
 
 1. `fortune_draws_v2`：append-only 抽籤歷史。
 2. `daily_fortune_state_v2`：每個 local date 目前顯示的 draw pointer。
 3. `analytics_events_v2`：尚未成功送達研究後端的匿名事件 queue。
 
-資料庫由 v1 升至 v2 時建立新表，不依賴舊占星表。舊表可保留在裝置資料庫中作為安全升級殘留，但 runtime 不再查詢、寫入或依賴它們。
+舊版占星資料庫 `daily-fortune.db` 原封不動保留，但新版 runtime 完全不查詢、不寫入或依賴它。兩種產品資料語意不同，因此本輪不把舊占星結果轉換成新抽籤結果，也不冒險做破壞性 schema migration。
 
 詳見 `docs/LOCAL_DATA.md`。
 
@@ -108,7 +108,7 @@ Room 只保存 v2 所需的三類資料：
 
 每日日期使用裝置當下 `ZoneId.systemDefault()`。
 
-每個 analytics event 必須另外保存：
+每個 analytics event 另外保存：
 
 - UTC epoch timestamp
 - timezone ID
@@ -123,7 +123,7 @@ Room 只保存 v2 所需的三類資料：
 App 啟動／回到前景時：
 
 1. 先讀最後一份有效 cached config；沒有則使用 embedded default。
-2. 非同步向 backend 取得 resolved config。
+2. 向 backend 取得 resolved config；網路工作在背景執行緒，不阻塞抽籤核心。
 3. 驗證 schema、distribution、rounding rule、correlation matrix。
 4. 驗證成功才覆寫 cache。
 5. 本次 draw 使用當下已解析且有效的 config，並把 config ID 寫進 draw/event。
@@ -194,9 +194,9 @@ App 首次安裝後建立隨機 UUID `installation_id` 並保存在本機。每�
 
 ### 9.2 Event queue
 
-事件先 append 到 Room，再批次上傳。只有後端明確成功接收後才從 queue 移除／標記 uploaded。
+事件先 append 到 Room，再批次上傳。只有後端明確成功接收後才從 queue 移除。
 
-因此短暫離線、程序被殺或網路錯誤不應造成事件直接遺失。
+因此短暫離線、程序被殺或網路錯誤不應造成已落盤事件直接遺失。
 
 ### 9.3 Events
 
@@ -209,7 +209,7 @@ App 首次安裝後建立隨機 UUID `installation_id` 並保存在本機。每�
 - `initial_draw`
 - `reroll`
 
-未來視覺事件另加，不與 fortune engine 耦合。
+目前 fortune treatment 的實際 exposure 可由 `initial_draw` / `reroll` 事件攜帶的 assignments 判定；未來視覺 treatment 在真正呈現時再新增顯式 `experiment_exposure` 與視覺事件。
 
 ### 9.4 Draw event payload
 
@@ -229,9 +229,9 @@ App 首次安裝後建立隨機 UUID `installation_id` 並保存在本機。每�
 
 ## 10. Backend
 
-現有 Supabase 專案尚未正式部署，原占星 schema/functions 可直接退役，不需要維持 runtime 相容。
+現有 Supabase 占星 backend 從未正式部署，已從產品主線移除，不需要維持 runtime 相容。
 
-新的 backend 僅需要：
+新的 backend 只包含：
 
 - base app config
 - experiments
@@ -262,7 +262,7 @@ App 不直接取得 service-role 權限。匿名 client 只呼叫受控 Edge Fun
 - astrology weight-search jobs
 - astrology feature cache/optimization tools
 
-Supabase 新 Edge Functions 可在 CI 進行 Deno check/test，但不再存在任何 astrology parity step。
+Supabase 新 Edge Functions 在 CI 進行 Deno check/test，不再存在 astrology parity step。
 
 ## 12. Failure policy
 
