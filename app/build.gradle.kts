@@ -1,3 +1,6 @@
+import java.net.URI
+import java.util.zip.ZipInputStream
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
@@ -11,6 +14,49 @@ fun quotedEnvironment(name: String): String {
     return "\"$value\""
 }
 
+val generatedKaiResDir = layout.buildDirectory.dir("generated/res/kai").get().asFile
+val generatedKaiFont = generatedKaiResDir.resolve("font/tw_kai_98_1.ttf")
+
+val prepareKaiFont by tasks.registering {
+    outputs.file(generatedKaiFont)
+    doLast {
+        val target = generatedKaiFont
+        if (target.exists() && target.length() > 1_000_000L) return@doLast
+
+        target.parentFile.mkdirs()
+        val cacheDir = layout.buildDirectory.dir("font-cache").get().asFile
+        cacheDir.mkdirs()
+        val zipFile = cacheDir.resolve("Fonts_Kai.zip")
+
+        if (!zipFile.exists() || zipFile.length() < 1_000_000L) {
+            val url = URI("https://www.cns11643.gov.tw/opendata/Fonts_Kai.zip").toURL()
+            val connection = url.openConnection().apply {
+                setRequestProperty("User-Agent", "daily-fortune-android-build/0.6.2")
+                connectTimeout = 20_000
+                readTimeout = 120_000
+            }
+            connection.getInputStream().use { input ->
+                zipFile.outputStream().use { output -> input.copyTo(output) }
+            }
+        }
+
+        var extracted = false
+        ZipInputStream(zipFile.inputStream().buffered()).use { zip ->
+            while (true) {
+                val entry = zip.nextEntry ?: break
+                if (!entry.isDirectory && entry.name.endsWith("TW-Kai-98_1.ttf")) {
+                    target.outputStream().buffered().use { output -> zip.copyTo(output) }
+                    extracted = true
+                    break
+                }
+            }
+        }
+        check(extracted && target.length() > 1_000_000L) {
+            "Unable to extract TW-Kai-98_1.ttf from the official CNS11643 font package"
+        }
+    }
+}
+
 android {
     namespace = "com.treepolo.dailyfortune"
     compileSdk = 36
@@ -22,13 +68,15 @@ android {
         // CI builds use the monotonically increasing GitHub Actions run number so
         // every distributed APK can upgrade the previous one in place.
         versionCode = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 2
-        versionName = "0.6.1"
+        versionName = "0.6.2"
 
         // Empty values keep the app fully offline with embedded experiment defaults.
         // Production builds can inject these once; future experiment changes happen remotely.
         buildConfigField("String", "REMOTE_CONFIG_URL", quotedEnvironment("DAILY_FORTUNE_CONFIG_URL"))
         buildConfigField("String", "ANALYTICS_INGEST_URL", quotedEnvironment("DAILY_FORTUNE_ANALYTICS_URL"))
     }
+
+    sourceSets.getByName("main").res.srcDir(generatedKaiResDir)
 
     signingConfigs {
         create("stableApp") {
@@ -62,6 +110,10 @@ android {
         compose = true
         buildConfig = true
     }
+}
+
+tasks.matching { it.name == "preBuild" }.configureEach {
+    dependsOn(prepareKaiFont)
 }
 
 ksp {
