@@ -11,7 +11,7 @@ on:
       - "tools/astrology_weight_search_v4_expanded.py"
       - "tools/astrology_weight_v3_seeds.json"
       - "supabase/functions/_shared/astrology_v1.ts"
-      - "supabase/functions/_shared/astrology_calibration_v4.ts"
+      - "supabase/functions/_shared/astrology_weights_v1_2.ts"
 
 permissions:
   contents: read
@@ -30,9 +30,8 @@ jobs:
       - uses: actions/checkout@v4
 
       # Feature matrices are deterministic for a given feature generator +
-      # astrology engine + calibration source. Version the cache by the content
-      # hash of all three inputs so optimizer/target changes can reuse all
-      # 880,968 rows without recalculating 1900-2100 astronomy.
+      # production astrology engine/weight definition. Version the cache by
+      # those content hashes so optimizer-only changes can reuse all 880,968 rows.
       - name: Restore versioned astrology feature cache
         id: feature-cache
         uses: actions/cache@v4
@@ -40,7 +39,7 @@ jobs:
           path: |
             weight-v3-features-${{ matrix.shard }}.bin
             weight-v3-features-${{ matrix.shard }}.json
-          key: astrology-features-v3-${{ runner.os }}-shard-${{ matrix.shard }}-${{ hashFiles('tools/astrology_weight_features_v3.ts', 'supabase/functions/_shared/astrology_v1.ts', 'supabase/functions/_shared/astrology_calibration_v4.ts') }}
+          key: astrology-features-v3-${{ runner.os }}-shard-${{ matrix.shard }}-${{ hashFiles('tools/astrology_weight_features_v3.ts', 'supabase/functions/_shared/astrology_v1.ts', 'supabase/functions/_shared/astrology_weights_v1_2.ts') }}
 
       - uses: denoland/setup-deno@v2
         if: steps.feature-cache.outputs.cache-hit != 'true'
