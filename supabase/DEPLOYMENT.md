@@ -37,7 +37,7 @@ DAILY_FORTUNE_ANALYTICS_URL=https://<project>.supabase.co/functions/v1/analytics
 
 For GitHub Actions, create repository secrets with the same names. The workflow passes them only into the Android build step.
 
-After one distributed APK contains these endpoint URLs, changing experiment variants, traffic weights, probability distributions, correlation matrices, overall rounding rules, or other already-supported parameters does not require another APK update.
+After one distributed APK contains these endpoint URLs, changing experiment variants, traffic rollout, probability distributions, correlation matrices, overall rounding rules, or other already-supported parameters does not require another APK update.
 
 ## 4. Base configuration
 
@@ -70,7 +70,9 @@ values
 
 Variant weights are relative; they do not need to sum to 1. `1,2,1` means 25%, 50%, 25% among installations admitted by the experiment rollout.
 
-The same `installation_id + experiment_id + salt` always resolves to the same arm while those values remain unchanged.
+Enrollment and arm selection use separate deterministic hashes. This means `rollout` can be ramped upward during one experiment without moving already-enrolled installations between A/B/C/... arms.
+
+Within one experiment version, keep `id`, `salt`, variant identities, and variant weights fixed. If arm weights, arm definitions, or assignment semantics need to change, create a new experiment ID/version (and normally a new salt). This prevents treatment crossover and keeps analysis interpretable.
 
 ## 6. Analytics
 
