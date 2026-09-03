@@ -2,14 +2,15 @@ import { Body, Ecliptic, GeoVector } from "npm:astronomy-engine@2.1.19";
 import {
   DOMAIN_GRADE_THRESHOLDS,
   OVERALL_GRADE_THRESHOLDS,
-  aspectFactorMultiplier,
-  bodyDomainMultiplier,
-  houseFactorMultiplier,
-  type CalibrationAspect,
+  aspectFactorAffinity,
+  bodyFactorAffinity,
+  houseFactorAffinity,
+  houseRelevance,
   type GradeThresholds,
-} from "./astrology_calibration_v4.ts";
+  type WeightAspect,
+} from "./astrology_weights_v1_2.ts";
 
-export const ASTROLOGY_ENGINE_VERSION = "astrology-v1.1.0";
+export const ASTROLOGY_ENGINE_VERSION = "astrology-v1.2.0";
 export const EPHEMERIS_VERSION = "astronomy-engine-2.1.19";
 export const TAIPEI_ZONE = "Asia/Taipei";
 
@@ -248,21 +249,21 @@ function buildFactors(user: ZodiacSign, astronomy: AstronomyDayData): AstrologyF
       const fraction = fractionValue as number;
       const house = houseFor(user, sign);
       const dignity = dignityMultiplier(summary.body, sign);
-      addIfMeaningful(factors, factor(
+      factors.push(factor(
         `house:${summary.body}:${sign}`,
         `${BODY_LABEL[summary.body]}位於第${house}宮`,
         `${BODY_LABEL[summary.body]}於今日約 ${Math.trunc(fraction * 100)}% 時間位於${ZODIAC_LABEL[sign]}（太陽星座整宮制第${house}宮）`,
-        (domain) => bodyValence(summary.body) * affinity(summary.body, domain) * houseWeight(house, domain) * dignity * fraction * 8,
-      ), (domain) => houseFactorMultiplier(summary.body, house, domain));
+        (domain) => bodyValence(summary.body) * houseFactorAffinity(summary.body, house, domain) * dignity * fraction * 8,
+      ));
 
       const relation = signRelation(user, sign);
       if (relation) {
-        addIfMeaningful(factors, factor(
+        factors.push(factor(
           `sun-sign:${summary.body}:${sign}:${relation.label}`,
           `${BODY_LABEL[summary.body]}與${ZODIAC_LABEL[user]}形成${relation.label}`,
           `${BODY_LABEL[summary.body]}位於${ZODIAC_LABEL[sign]}，以${ZODIAC_LABEL[user]}為太陽星座時形成星座級${relation.label}；不假設出生太陽的精確度數`,
-          (domain) => relation.polarity(summary.body) * affinity(summary.body, domain) * dignity * fraction * 5,
-        ), (domain) => bodyDomainMultiplier(summary.body, domain));
+          (domain) => relation.polarity(summary.body) * bodyFactorAffinity(summary.body, domain) * dignity * fraction * 5,
+        ));
       }
     }
 
@@ -270,13 +271,13 @@ function buildFactors(user: ZodiacSign, astronomy: AstronomyDayData): AstrologyF
       const dominantSign = Object.entries(summary.signFractions).sort((a, b) => (b[1] ?? 0) - (a[1] ?? 0))[0][0] as ZodiacSign;
       const house = houseFor(user, dominantSign);
       const stationBoost = summary.directionChanged ? 1.35 : 1.0;
-      addIfMeaningful(factors, factor(
+      factors.push(factor(
         `retrograde:${summary.body}`,
         `${BODY_LABEL[summary.body]}逆行`,
         `${BODY_LABEL[summary.body]}在四個六小時運動區段中約 ${Math.trunc(summary.retrogradeFraction * 100)}% 呈逆行${summary.directionChanged ? "，且當日偵測到運動方向切換" : ""}`,
-        (domain) => -3 * retrogradeSensitivity(summary.body) * affinity(summary.body, domain) *
-          (0.5 + 0.5 * clamp(houseWeight(house, domain), 0, 1)) * stationBoost,
-      ), (domain) => bodyDomainMultiplier(summary.body, domain));
+        (domain) => -3 * retrogradeSensitivity(summary.body) * bodyFactorAffinity(summary.body, domain) *
+          (0.5 + 0.5 * clamp(houseRelevance(house, domain), 0, 1)) * stationBoost,
+      ));
     }
   }
 
@@ -291,16 +292,16 @@ function buildFactors(user: ZodiacSign, astronomy: AstronomyDayData): AstrologyF
     const strength = clamp(1 - hit.orbDegrees / hit.aspect.maxOrb, 0, 1);
     const dignity = (dignityMultiplier(hit.first, signA) + dignityMultiplier(hit.second, signB)) / 2;
     const polarity = hit.aspect.basePolarity ?? clamp(bodyValence(hit.first) + bodyValence(hit.second), -1, 1);
-    addIfMeaningful(factors, factor(
+    factors.push(factor(
       `aspect:${hit.first}:${hit.second}:${hit.aspect.name}`,
       `${BODY_LABEL[hit.first]}與${BODY_LABEL[hit.second]}${hit.aspect.label}`,
       `最近於 ${taipeiHm(hit.closestTime)}，與${Math.trunc(hit.aspect.angle)}°相差 ${hit.orbDegrees.toFixed(2)}°；分別落第${houseA}、${houseB}宮`,
       (domain) => {
-        const avgAffinity = (affinity(hit.first, domain) + affinity(hit.second, domain)) / 2;
-        const houseRelevance = 0.6 + 0.4 * clamp(Math.max(houseWeight(houseA, domain), houseWeight(houseB, domain)), 0, 1);
-        return polarity * hit.aspect.importance * strength * avgAffinity * houseRelevance * dignity * 10;
+        const directAffinity = aspectFactorAffinity(hit.first, hit.second, hit.aspect.name as WeightAspect, domain);
+        const relevance = 0.6 + 0.4 * clamp(Math.max(houseRelevance(houseA, domain), houseRelevance(houseB, domain)), 0, 1);
+        return polarity * hit.aspect.importance * strength * directAffinity * relevance * dignity * 10;
       },
-    ), (domain) => aspectFactorMultiplier(hit.first, hit.second, hit.aspect.name as CalibrationAspect, domain));
+    ));
   }
   return factors;
 }
@@ -312,20 +313,6 @@ function factor(id: string, title: string, evidence: string, value: (domain: For
     evidence,
     contributions: Object.fromEntries(DOMAINS.map((domain) => [domain, value(domain)])) as NumberMap,
   };
-}
-
-function addIfMeaningful(
-  list: AstrologyFactor[],
-  item: AstrologyFactor,
-  multiplier: (domain: FortuneDomain) => number = () => 1,
-) {
-  if (!DOMAINS.some((domain) => Math.abs(item.contributions[domain]) >= 0.01)) return;
-  list.push({
-    ...item,
-    contributions: Object.fromEntries(
-      DOMAINS.map((domain) => [domain, item.contributions[domain] * multiplier(domain)]),
-    ) as NumberMap,
-  });
 }
 
 export function grade(score: number): FortuneGrade {
@@ -392,39 +379,6 @@ const BODY_VALENCE: Record<AstroBody, number> = {
   JUPITER: 0.85, SATURN: -0.55, URANUS: 0, NEPTUNE: 0, PLUTO: 0,
 };
 function bodyValence(body: AstroBody): number { return BODY_VALENCE[body]; }
-
-const BODY_AFFINITY: Record<AstroBody, NumberMap> = {
-  SUN: affinities(.25, .20, .75, .25, .85),
-  MOON: affinities(.20, .70, .20, .80, .75),
-  MERCURY: affinities(.55, .35, 1.00, .70, .20),
-  VENUS: affinities(.55, 1.00, .25, .95, .30),
-  MARS: affinities(.35, .65, .85, .55, .85),
-  JUPITER: affinities(.95, .45, .80, .60, .50),
-  SATURN: affinities(.75, .35, .90, .45, .70),
-  URANUS: affinities(.45, .45, .55, .55, .35),
-  NEPTUNE: affinities(.35, .65, .45, .55, .50),
-  PLUTO: affinities(.50, .55, .55, .55, .45),
-};
-function affinities(w: number, l: number, work: number, r: number, h: number): NumberMap {
-  return { WEALTH: w, LOVE: l, WORK_STUDY: work, RELATIONSHIPS: r, HEALTH: h };
-}
-function affinity(body: AstroBody, domain: FortuneDomain): number { return BODY_AFFINITY[body][domain]; }
-
-const HOUSE_WEIGHTS: Record<number, NumberMap> = {
-  1: affinities(0, 0, .25, .20, 1.00),
-  2: affinities(1.00, 0, 0, 0, 0),
-  3: affinities(0, 0, .90, .50, 0),
-  4: affinities(0, .45, 0, .55, .35),
-  5: affinities(0, 1.00, .35, .25, 0),
-  6: affinities(0, 0, .85, 0, 1.00),
-  7: affinities(.25, 1.00, 0, 1.00, 0),
-  8: affinities(.75, .45, 0, 0, .35),
-  9: affinities(0, 0, .85, .25, 0),
-  10: affinities(.40, 0, 1.00, .20, 0),
-  11: affinities(.35, .25, .35, 1.00, 0),
-  12: affinities(0, .25, .20, .25, .60),
-};
-function houseWeight(house: number, domain: FortuneDomain): number { return HOUSE_WEIGHTS[house]?.[domain] ?? 0; }
 
 function retrogradeSensitivity(body: AstroBody): number {
   return ({ SUN: 0, MOON: 0, MERCURY: 1.00, VENUS: .80, MARS: .80, JUPITER: .45, SATURN: .45, URANUS: .12, NEPTUNE: .12, PLUTO: .12 } as const)[body];
