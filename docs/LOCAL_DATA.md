@@ -68,14 +68,14 @@ App 重開後只需讀當日 state，再讀 current draw。
 - `configId`
 - `assignmentsJson`
 - `payloadJson`
-- `uploadState`: `PENDING` / `UPLOADING` / `FAILED`
+- `uploadState`: `PENDING` / `FAILED`
 - `attemptCount`
 
-成功送達後可以刪除 queue row；研究後端保存完整 canonical event。
+成功送達後刪除 queue row；研究後端保存完整 canonical event。
 
 ## 5. Shared preferences
 
-少量不適合 Room 的安裝層狀態可存在 private SharedPreferences：
+少量不適合 Room 的安裝層狀態存在 private SharedPreferences：
 
 - `installation_id`
 - `cached_remote_config_json`
@@ -83,23 +83,23 @@ App 重開後只需讀當日 state，再讀 current draw。
 
 這些不是使用者可見設定。
 
-## 6. v1 → v2 migration
+## 6. 舊版資料隔離
 
-舊 v1 Room schema 包含 astronomy、destiny、astrology factors、zodiac daily state、reroll、sample、binding 等表。
+舊版占星產品使用 `daily-fortune.db`，新版使用獨立的 `daily-fortune-v2.db`。
 
-v2 migration 採取保守策略：
+採用新資料庫檔案的原因：
 
-- 建立新的 `*_v2` 表。
-- Runtime 完全停止查詢／寫入舊 astrology tables。
-- 不嘗試把舊占星結果轉換成新抽籤結果，因為兩種產品語意不同。
-- 不在同一次 migration 中破壞性刪除舊表，避免升級時因意外 schema 差異造成資料庫開啟失敗。
-- 未來確認 v2 穩定後，可另做 migration 清理 legacy tables。
+- 舊版與新版的 fortune 語意不同，沒有可靠的一對一資料轉換。
+- 不需要在一次更新中對複雜的舊占星 schema 做破壞性 migration。
+- 舊資料庫檔案可原封不動保留，降低升級時資料庫打不開的風險。
 
-因此舊安裝更新後，今天的新產品狀態從第一次新制抽籤開始建立。
+新版 runtime 完全不查詢、不寫入 `daily-fortune.db`。第一次執行新制版本時，`daily-fortune-v2.db` 從空狀態建立；當天結果從使用者第一次新制抽籤開始。
+
+之後若確認舊資料已無保留需求，可在另一個明確版本處理 legacy database cleanup；本輪不自動刪除。
 
 ## 7. 一致性規則
 
-一次 draw 寫入應在單一 Room transaction 中完成：
+一次 draw 寫入在單一 Room transaction 中完成：
 
 1. insert `fortune_draws_v2`
 2. upsert `daily_fortune_state_v2`
