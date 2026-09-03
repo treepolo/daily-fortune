@@ -77,6 +77,18 @@ class AstrologyEngineTest {
     }
 
     @Test
+    fun astrologyFactorsAreNeverThresholdFiltered() {
+        val destiny = AstrologyEngine.calculateDay(LocalDate.of(2026, 9, 2)).getValue(ZodiacSign.SCORPIO)
+        val mercuryHouse = destiny.audit.factors.firstOrNull { it.id.startsWith("house:MERCURY:") }
+
+        assertTrue("Expected Mercury house factor to remain even with zero contribution", mercuryHouse != null)
+        assertTrue(
+            "Mercury house factor should be present with direct zero contributions",
+            FortuneDomain.entries.all { domain -> mercuryHouse!!.contributions.getValue(domain) == 0.0 },
+        )
+    }
+
+    @Test
     fun wholeSignHouseMappingIsStable() {
         assertEquals(1, AstrologyEngine.houseFor(ZodiacSign.SCORPIO, ZodiacSign.SCORPIO))
         assertEquals(2, AstrologyEngine.houseFor(ZodiacSign.SCORPIO, ZodiacSign.SAGITTARIUS))
