@@ -10,6 +10,8 @@ import com.treepolo.dailyfortune.model.RoundingMethod
 import com.treepolo.dailyfortune.model.SamplingConfig
 import com.treepolo.dailyfortune.model.SamplingMode
 import com.treepolo.dailyfortune.model.VisualExperimentConfig
+import kotlin.math.abs
+import kotlin.math.sqrt
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -101,40 +103,94 @@ object ExperimentConfigCodec {
 }
 
 object FortuneConfigValidator {
+    private const val MATRIX_SIZE = 5
+    private const val EPSILON = 1e-8
+
     fun validate(config: ResolvedExperimentConfig) {
         require(config.initialDistribution.isValid()) { "Invalid initial distribution" }
         require(config.rerollDistribution.isValid()) { "Invalid reroll distribution" }
 
         when (config.sampling.mode) {
             SamplingMode.INDEPENDENT -> Unit
-            SamplingMode.GAUSSIAN_COPULA -> {
-                val matrix = requireNotNull(config.sampling.correlationMatrix) {
+            SamplingMode.GAUSSIAN_COPULA -> validateCorrelationMatrix(
+                requireNotNull(config.sampling.correlationMatrix) {
                     "Correlated sampling requires a matrix"
-                }
-                require(matrix.size == 5 && matrix.all { it.size == 5 }) { "Correlation matrix must be 5x5" }
-            }
+                },
+            )
         }
 
         if (config.overallRule.type == OverallRuleType.PIECEWISE) {
-            val segments = config.overallRule.segments.sortedBy { it.minInclusive }
-            require(segments.isNotEmpty()) { "PIECEWISE requires segments" }
-            require(kotlin.math.abs(segments.first().minInclusive - 1.0) <= 1e-9) {
-                "PIECEWISE must start at 1"
+            validatePiecewise(config.overallRule.segments)
+        }
+    }
+
+    private fun validateCorrelationMatrix(matrix: List<List<Double>>) {
+        require(matrix.size == MATRIX_SIZE && matrix.all { it.size == MATRIX_SIZE }) {
+            "Correlation matrix must be 5x5"
+        }
+        for (row in 0 until MATRIX_SIZE) {
+            for (column in 0 until MATRIX_SIZE) {
+                val value = matrix[row][column]
+                require(value.isFinite() && value in -1.0..1.0) {
+                    "Correlation values must be finite and in [-1, 1]"
+                }
+                require(abs(value - matrix[column][row]) <= EPSILON) {
+                    "Correlation matrix must be symmetric"
+                }
             }
-            var expectedStart = 1.0
-            segments.forEachIndexed { index, segment ->
-                require(kotlin.math.abs(segment.minInclusive - expectedStart) <= 1e-9) {
-                    "PIECEWISE segments must be contiguous"
+            require(abs(matrix[row][row] - 1.0) <= EPSILON) {
+                "Correlation matrix diagonal must equal 1"
+            }
+        }
+
+        // Cholesky factorization proves the matrix is positive definite enough for sampling.
+        val lower = Array(MATRIX_SIZE) { DoubleArray(MATRIX_SIZE) }
+        for (row in 0 until MATRIX_SIZE) {
+            for (column in 0..row) {
+                var residual = matrix[row][column]
+                for (index in 0 until column) {
+                    residual -= lower[row][index] * lower[column][index]
                 }
-                if (index == segments.lastIndex) {
-                    require(segment.maxExclusive == null || kotlin.math.abs(segment.maxExclusive - 7.0) <= 1e-9) {
-                        "Final PIECEWISE segment must cover 7"
-                    }
+                if (row == column) {
+                    require(residual > EPSILON) { "Correlation matrix must be positive definite" }
+                    lower[row][column] = sqrt(residual)
                 } else {
-                    val end = requireNotNull(segment.maxExclusive) { "Non-final segment needs max_exclusive" }
-                    require(end > segment.minInclusive) { "PIECEWISE segment must have positive width" }
-                    expectedStart = end
+                    lower[row][column] = residual / lower[column][column]
                 }
+            }
+        }
+    }
+
+    private fun validatePiecewise(rawSegments: List<OverallRuleSegment>) {
+        val segments = rawSegments.sortedBy { it.minInclusive }
+        require(segments.isNotEmpty()) { "PIECEWISE requires segments" }
+        require(abs(segments.first().minInclusive - 1.0) <= EPSILON) {
+            "PIECEWISE must start at 1"
+        }
+
+        var expectedStart = 1.0
+        segments.forEachIndexed { index, segment ->
+            require(segment.minInclusive.isFinite() && segment.minInclusive in 1.0..7.0) {
+                "PIECEWISE segment start must be in [1, 7]"
+            }
+            require(abs(segment.minInclusive - expectedStart) <= EPSILON) {
+                "PIECEWISE segments must be contiguous and non-overlapping"
+            }
+
+            val end = segment.maxExclusive
+            if (index == segments.lastIndex) {
+                require(end == null || abs(end - 7.0) <= EPSILON) {
+                    "Final PIECEWISE segment must cover 7"
+                }
+                require(segment.minInclusive < 7.0 || segments.size == 1) {
+                    "Final PIECEWISE segment must have positive width"
+                }
+            } else {
+                val requiredEnd = requireNotNull(end) { "Non-final segment needs max_exclusive" }
+                require(requiredEnd.isFinite() && requiredEnd > segment.minInclusive && requiredEnd <= 7.0) {
+                    "PIECEWISE segment must have positive width within [1, 7]"
+                }
+                expectedStart = requiredEnd
             }
         }
     }
