@@ -50,9 +50,44 @@ Deno.test("same installation resolves to same variant", async () => {
     { experiment_id: "probability-v1", variant_id: "B", weight: 1, treatment: { marker: "B" } },
     { experiment_id: "probability-v1", variant_id: "C", weight: 1, treatment: { marker: "C" } },
   ];
-  const first = await resolveExperiments({}, "11111111-1111-4111-8111-111111111111", experiments, variants);
-  const second = await resolveExperiments({}, "11111111-1111-4111-8111-111111111111", experiments, variants);
+  const installation = "11111111-1111-4111-8111-111111111111";
+  const first = await resolveExperiments({}, installation, experiments, variants);
+  const second = await resolveExperiments({}, installation, experiments, variants);
   assert(first.assignments[0]?.variant_id === second.assignments[0]?.variant_id, "assignment must be stable");
+});
+
+Deno.test("ramping rollout never changes variant for already enrolled installations", async () => {
+  const variants: VariantRow[] = [
+    { experiment_id: "probability-v2", variant_id: "A", weight: 1, treatment: { marker: "A" } },
+    { experiment_id: "probability-v2", variant_id: "B", weight: 1, treatment: { marker: "B" } },
+    { experiment_id: "probability-v2", variant_id: "C", weight: 1, treatment: { marker: "C" } },
+    { experiment_id: "probability-v2", variant_id: "D", weight: 1, treatment: { marker: "D" } },
+  ];
+  const baseExperiment = {
+    id: "probability-v2",
+    rollout: 0.2,
+    salt: "ramp-salt",
+    priority: 0,
+    starts_at: null,
+    ends_at: null,
+  };
+
+  for (let index = 0; index < 500; index++) {
+    const suffix = index.toString(16).padStart(12, "0");
+    const installation = `11111111-1111-4111-8111-${suffix}`;
+    const atTwenty = await resolveExperiments({}, installation, [baseExperiment], variants);
+    if (atTwenty.assignments.length === 0) continue;
+    const atHundred = await resolveExperiments(
+      {},
+      installation,
+      [{ ...baseExperiment, rollout: 1 }],
+      variants,
+    );
+    assert(
+      atTwenty.assignments[0].variant_id === atHundred.assignments[0]?.variant_id,
+      "rollout ramp must preserve the existing variant",
+    );
+  }
 });
 
 function assert(condition: boolean, message: string): asserts condition {
