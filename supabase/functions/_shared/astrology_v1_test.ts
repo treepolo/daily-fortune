@@ -54,3 +54,13 @@ Deno.test("audit factors reconstruct every domain score", () => {
   const average = DOMAINS.reduce((sum, domain) => sum + destiny.domainScores[domain], 0) / DOMAINS.length;
   assertNear(average, destiny.overallScore, 1e-9, "Overall score mismatch");
 });
+
+Deno.test("astrology factors are never threshold-filtered", () => {
+  const destiny = calculate("SCORPIO", analyzeDay("2026-09-02"));
+  const mercuryHouse = destiny.factors.find((factor) => factor.id.startsWith("house:MERCURY:"));
+  assert(mercuryHouse, "Expected Mercury house factor to remain in the audit even when its contribution is zero");
+  assert(
+    DOMAINS.every((domain) => mercuryHouse.contributions[domain] === 0),
+    "Mercury house factor should be present with its direct zero contribution, not filtered out",
+  );
+});
