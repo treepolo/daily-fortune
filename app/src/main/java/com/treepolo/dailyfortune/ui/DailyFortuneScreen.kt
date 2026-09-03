@@ -282,9 +282,6 @@ private fun DistantTempleBackdrop() {
     ) {
         Canvas(modifier = Modifier.fillMaxSize()) {
             val horizon = size.height * 0.47f
-
-            // Intentionally plain. Device review showed that symbolic circles, foliage blobs,
-            // and the tiny temple silhouette read as meaningless or ominous decoration.
             drawRect(
                 color = BackgroundRaised.copy(alpha = 0.68f),
                 topLeft = Offset(0f, horizon),
@@ -412,68 +409,32 @@ private fun RolledPaperSlip(modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun SlipSpotlight(
+private fun SlipEmphasisLines(
     active: Boolean,
-    dragProgress: Float,
     modifier: Modifier = Modifier,
 ) {
-    val transition = rememberInfiniteTransition(label = "slip-spotlight")
-    val breathe by transition.animateFloat(
-        initialValue = 0.72f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            tween(700, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse,
-        ),
-        label = "slip-spotlight-breathe",
-    )
-    Canvas(modifier = modifier.size(width = 92.dp, height = 96.dp)) {
-        val source = Offset(size.width / 2f, size.height * 0.94f)
-        val strength = (if (active) 1f else 0.72f) * breathe * (1f - dragProgress * 0.20f)
-
-        val outerBeam = Path().apply {
-            moveTo(size.width * 0.08f, 0f)
-            lineTo(size.width * 0.92f, 0f)
-            lineTo(source.x + 7f, source.y)
-            lineTo(source.x - 7f, source.y)
-            close()
-        }
-        drawPath(outerBeam, GoldBright.copy(alpha = 0.055f * strength))
-
-        val innerBeam = Path().apply {
-            moveTo(size.width * 0.28f, 0f)
-            lineTo(size.width * 0.72f, 0f)
-            lineTo(source.x + 4f, source.y)
-            lineTo(source.x - 4f, source.y)
-            close()
-        }
-        drawPath(innerBeam, AmberHighlight.copy(alpha = 0.11f * strength))
-
-        val rayXs = listOf(0.10f, 0.24f, 0.38f, 0.62f, 0.76f, 0.90f)
-        rayXs.forEachIndexed { index, fraction ->
-            drawLine(
-                color = GoldBright.copy(alpha = (0.20f + if (index % 2 == 0) 0.08f else 0f) * strength),
-                start = Offset(size.width * fraction, 4f),
-                end = Offset(
-                    source.x + (fraction - 0.5f) * 12f,
-                    source.y - 9f,
-                ),
-                strokeWidth = if (index % 2 == 0) 2.0f else 1.1f,
-                cap = StrokeCap.Round,
-            )
-        }
+    Canvas(modifier = modifier.size(width = 64.dp, height = 48.dp)) {
+        val alpha = if (active) 0.98f else 0.76f
+        val stroke = if (active) 3.2f else 2.6f
         drawLine(
-            color = AmberHighlight.copy(alpha = 0.70f * strength),
-            start = Offset(source.x - 11f, source.y - 4f),
-            end = Offset(source.x + 11f, source.y - 4f),
-            strokeWidth = 2.0f,
+            color = GoldBright.copy(alpha = alpha),
+            start = Offset(size.width * 0.28f, size.height * 0.88f),
+            end = Offset(size.width * 0.10f, size.height * 0.14f),
+            strokeWidth = stroke,
             cap = StrokeCap.Round,
         )
         drawLine(
-            color = AmberHighlight.copy(alpha = 0.70f * strength),
-            start = Offset(source.x, source.y - 15f),
-            end = Offset(source.x, source.y + 7f),
-            strokeWidth = 2.0f,
+            color = GoldBright.copy(alpha = alpha),
+            start = Offset(size.width * 0.50f, size.height * 0.80f),
+            end = Offset(size.width * 0.50f, size.height * 0.02f),
+            strokeWidth = stroke,
+            cap = StrokeCap.Round,
+        )
+        drawLine(
+            color = GoldBright.copy(alpha = alpha),
+            start = Offset(size.width * 0.72f, size.height * 0.88f),
+            end = Offset(size.width * 0.90f, size.height * 0.14f),
+            strokeWidth = stroke,
             cap = StrokeCap.Round,
         )
     }
@@ -490,42 +451,43 @@ private fun InteractiveFortuneTube(
     var dragProgress by remember { mutableFloatStateOf(0f) }
     var committed by remember { mutableStateOf(false) }
 
+    // Resting positions are exactly the v0.6.3 arrangement the device review approved:
+    // eight rear rolls first, then the slightly higher center roll drawn on top.
     val poses = remember {
         listOf(
-            SlipPose(-74, 54, -9f),
-            SlipPose(-57, 34, -6f),
-            SlipPose(-39, 46, -3f),
-            SlipPose(-20, 27, -1.5f),
-            SlipPose(0, 7, 0f),
-            SlipPose(21, 30, 1.5f),
-            SlipPose(42, 43, 4f),
-            SlipPose(61, 31, 6f),
-            SlipPose(77, 52, 9f),
+            SlipPose(-70, 43, -8f),
+            SlipPose(-50, 28, -4f),
+            SlipPose(-29, 48, 3f),
+            SlipPose(-12, 34, -2f),
+            SlipPose(18, 45, 2f),
+            SlipPose(37, 30, -3f),
+            SlipPose(57, 47, 5f),
+            SlipPose(72, 36, 8f),
+            SlipPose(0, 20, 0f),
         )
     }
-    val suggestedIndex = 4
+    val suggestedIndex = 8
     val focusIndex = activeIndex ?: suggestedIndex
     val focusPose = poses[focusIndex]
-    val focusLift = if (activeIndex != null) 16f + 150f * dragProgress else 0f
+    val focusLift = if (activeIndex != null) 10f + 150f * dragProgress else 0f
 
     Box(
         modifier = Modifier.size(width = 228.dp, height = 360.dp),
         contentAlignment = Alignment.TopCenter,
     ) {
-        SlipSpotlight(
+        SlipEmphasisLines(
             active = activeIndex != null,
-            dragProgress = dragProgress,
             modifier = Modifier
                 .offset(
                     x = focusPose.x.dp,
-                    y = (focusPose.y - 92f - focusLift).dp,
+                    y = (focusPose.y - 52f - focusLift).dp,
                 )
                 .zIndex(0f),
         )
 
         poses.forEachIndexed { index, pose ->
             val isActive = activeIndex == index
-            val lift = if (isActive) 16f + 150f * dragProgress else 0f
+            val lift = if (isActive) 10f + 150f * dragProgress else 0f
             val currentRotation = if (isActive) {
                 pose.rotation * (1f - dragProgress * 0.78f)
             } else {
@@ -589,7 +551,6 @@ private fun InteractiveFortuneTube(
             }
         }
 
-        // The opening stays hidden. The front rim is simply the occlusion boundary.
         Canvas(
             modifier = Modifier
                 .fillMaxSize()
