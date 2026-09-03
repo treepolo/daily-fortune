@@ -37,16 +37,29 @@ class ResearchManager(
 
     fun currentConfig(): ResolvedExperimentConfig = activeConfig
 
+    /**
+     * Starts one foreground session. Remote treatment resolution happens before the session
+     * becomes interactive, so first-install users cannot draw with the embedded fallback and
+     * then be assigned to a different experiment treatment moments later.
+     */
     suspend fun startSession() {
         val newSession = sessionMutex.withLock {
             if (sessionId != null) return@withLock null
             UUID.randomUUID().toString().also { sessionId = it }
-        }
-        if (newSession != null) {
-            dao.insertAnalyticsEvent(eventEntity("app_open", JSONObject(), activeConfig, newSession))
-            dao.insertAnalyticsEvent(eventEntity("session_start", JSONObject(), activeConfig, newSession))
-        }
+        } ?: return
+
         refreshRemoteConfig()
+        val config = activeConfig
+        dao.insertAnalyticsEvent(eventEntity("app_open", JSONObject(), config, newSession))
+        dao.insertAnalyticsEvent(eventEntity("session_start", JSONObject(), config, newSession))
+        if (config.assignments.isNotEmpty()) {
+            val exposurePayload = JSONObject()
+                .put("static_variant_id", config.visual.staticVariantId)
+                .put("reveal_variant_id", config.visual.revealVariantId)
+            dao.insertAnalyticsEvent(
+                eventEntity("experiment_exposure", exposurePayload, config, newSession),
+            )
+        }
         flushPendingEvents()
     }
 
