@@ -14,13 +14,13 @@ fun quotedEnvironment(name: String): String {
     return "\"$value\""
 }
 
-val generatedKaiResDir = layout.buildDirectory.dir("generated/res/kai")
-val generatedKaiFont = generatedKaiResDir.map { it.file("font/tw_kai_98_1.ttf") }
+val generatedKaiResDir = layout.buildDirectory.dir("generated/res/kai").get().asFile
+val generatedKaiFont = generatedKaiResDir.resolve("font/tw_kai_98_1.ttf")
 
 val prepareKaiFont by tasks.registering {
     outputs.file(generatedKaiFont)
     doLast {
-        val target = generatedKaiFont.get().asFile
+        val target = generatedKaiFont
         if (target.exists() && target.length() > 1_000_000L) return@doLast
 
         target.parentFile.mkdirs()
