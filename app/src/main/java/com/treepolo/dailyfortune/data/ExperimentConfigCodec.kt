@@ -1,11 +1,15 @@
 package com.treepolo.dailyfortune.data
 
+import com.treepolo.dailyfortune.model.DynamicProbabilityConfig
 import com.treepolo.dailyfortune.model.ExperimentAssignment
 import com.treepolo.dailyfortune.model.GradeDistribution
 import com.treepolo.dailyfortune.model.OverallRule
 import com.treepolo.dailyfortune.model.OverallRuleSegment
 import com.treepolo.dailyfortune.model.OverallRuleType
+import com.treepolo.dailyfortune.model.PityConfig
+import com.treepolo.dailyfortune.model.PityScope
 import com.treepolo.dailyfortune.model.ResolvedExperimentConfig
+import com.treepolo.dailyfortune.model.RerollDistributionBand
 import com.treepolo.dailyfortune.model.RoundingMethod
 import com.treepolo.dailyfortune.model.SamplingConfig
 import com.treepolo.dailyfortune.model.SamplingMode
@@ -21,6 +25,7 @@ object ExperimentConfigCodec {
         val fortune = root.getJSONObject("fortune")
         val samplingObject = fortune.getJSONObject("sampling")
         val overallObject = fortune.getJSONObject("overall_rule")
+        val dynamicObject = fortune.optJSONObject("dynamic_probability")
         val visualObject = root.optJSONObject("visual")
 
         val config = ResolvedExperimentConfig(
@@ -38,9 +43,11 @@ object ExperimentConfigCodec {
                 type = OverallRuleType.valueOf(overallObject.getString("type")),
                 segments = overallObject.optJSONArray("segments")?.let(::parseSegments).orEmpty(),
             ),
+            dynamicProbability = parseDynamicProbability(dynamicObject),
             visual = VisualExperimentConfig(
                 staticVariantId = visualObject?.optString("static_variant_id", "baseline") ?: "baseline",
-                revealVariantId = visualObject?.optString("reveal_variant_id", "none") ?: "none",
+                revealVariantId = visualObject?.optString("reveal_variant_id", "interactive-paper-v1")
+                    ?: "interactive-paper-v1",
             ),
         )
         require(config.isValid()) { "Remote experiment config failed validation" }
@@ -67,6 +74,42 @@ object ExperimentConfigCodec {
         id = value.getString("id"),
         probabilities = value.getJSONArray("probabilities").toDoubleList(),
     )
+
+    private fun parseDynamicProbability(value: JSONObject?): DynamicProbabilityConfig {
+        if (value == null) return DynamicProbabilityConfig()
+        val schedule = value.optJSONArray("reroll_schedule")?.let { array ->
+            buildList {
+                for (index in 0 until array.length()) {
+                    val item = array.getJSONObject(index)
+                    add(
+                        RerollDistributionBand(
+                            minRerollIndexInclusive = item.getInt("min_reroll_index_inclusive"),
+                            maxRerollIndexInclusive = if (item.isNull("max_reroll_index_inclusive")) {
+                                null
+                            } else {
+                                item.getInt("max_reroll_index_inclusive")
+                            },
+                            distribution = parseDistribution(item.getJSONObject("distribution")),
+                        ),
+                    )
+                }
+            }
+        }.orEmpty()
+        val pityObject = value.optJSONObject("pity")
+        val pity = pityObject?.let {
+            PityConfig(
+                enabled = it.optBoolean("enabled", false),
+                afterConsecutiveMisses = it.optInt("after_consecutive_misses", 0),
+                successScore = it.optInt("success_score", 7),
+                scope = PityScope.valueOf(it.optString("scope", PityScope.OVERALL_AT_LEAST.name)),
+            )
+        }
+        return DynamicProbabilityConfig(
+            policyId = value.optString("policy_id", "static-v1"),
+            rerollSchedule = schedule,
+            pity = pity,
+        )
+    }
 
     private fun parseAssignments(array: JSONArray?): List<ExperimentAssignment> = buildList {
         if (array == null) return@buildList
@@ -122,6 +165,33 @@ object FortuneConfigValidator {
         if (config.overallRule.type == OverallRuleType.PIECEWISE) {
             validatePiecewise(config.overallRule.segments)
         }
+        validateDynamicProbability(config.dynamicProbability)
+    }
+
+    private fun validateDynamicProbability(config: DynamicProbabilityConfig) {
+        require(config.policyId.isNotBlank()) { "Dynamic probability policy id must not be blank" }
+        val schedule = config.rerollSchedule.sortedBy { it.minRerollIndexInclusive }
+        var previousEnd = 0
+        schedule.forEachIndexed { index, band ->
+            require(band.minRerollIndexInclusive >= 1) { "Reroll schedule starts at index 1 or later" }
+            require(band.distribution.isValid()) { "Invalid reroll schedule distribution" }
+            val end = band.maxRerollIndexInclusive
+            if (end != null) {
+                require(end >= band.minRerollIndexInclusive) { "Reroll schedule band has negative width" }
+            }
+            if (index > 0) {
+                require(band.minRerollIndexInclusive > previousEnd) { "Reroll schedule bands must not overlap" }
+            }
+            previousEnd = end ?: Int.MAX_VALUE
+            if (previousEnd == Int.MAX_VALUE) {
+                require(index == schedule.lastIndex) { "Open-ended reroll schedule band must be final" }
+            }
+        }
+
+        config.pity?.let { pity ->
+            require(pity.afterConsecutiveMisses >= 0) { "Pity miss threshold must be non-negative" }
+            require(pity.successScore in 1..7) { "Pity success score must be in [1, 7]" }
+        }
     }
 
     private fun validateCorrelationMatrix(matrix: List<List<Double>>) {
@@ -143,7 +213,6 @@ object FortuneConfigValidator {
             }
         }
 
-        // Cholesky factorization proves the matrix is positive definite enough for sampling.
         val lower = Array(MATRIX_SIZE) { DoubleArray(MATRIX_SIZE) }
         for (row in 0 until MATRIX_SIZE) {
             for (column in 0..row) {
