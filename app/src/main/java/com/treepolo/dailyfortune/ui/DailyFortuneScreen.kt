@@ -1,22 +1,21 @@
 package com.treepolo.dailyfortune.ui
 
-import android.graphics.Typeface
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -31,6 +30,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
@@ -61,7 +61,6 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.Shadow
@@ -73,11 +72,13 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.treepolo.dailyfortune.R
 import com.treepolo.dailyfortune.model.FortuneDomain
 import com.treepolo.dailyfortune.model.FortuneDraw
 import com.treepolo.dailyfortune.model.FortuneGrade
@@ -87,25 +88,28 @@ import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.sin
 
-private val TempleInk = Color(0xFF120A08)
-private val TempleDeepRed = Color(0xFF3A0907)
-private val TempleRed = Color(0xFF77140F)
-private val TempleCinnabar = Color(0xFFA92A1D)
-private val TempleGold = Color(0xFFD7A53C)
-private val TempleBrightGold = Color(0xFFFFDF78)
-private val Paper = Color(0xFFF4E7C7)
-private val PaperShade = Color(0xFFE3D0A8)
-private val PaperInk = Color(0xFF2B2119)
-private val MutedInk = Color(0xFF735F47)
-private val Bamboo = Color(0xFFDDBD77)
-private val BambooDark = Color(0xFF6A431F)
+private val BackgroundInk = Color(0xFF100B09)
+private val BackgroundRaised = Color(0xFF1A100D)
+private val TempleSilhouette = Color(0xFF4A231B)
+private val TempleSilhouetteDark = Color(0xFF281411)
+private val LacquerRed = Color(0xFF8E2018)
+private val LacquerRedDark = Color(0xFF5A120E)
+private val LacquerRedSide = Color(0xFF6D1712)
+private val GoldLine = Color(0xFFD9AA48)
+private val GoldBright = Color(0xFFF2CF72)
+private val PaperBase = Color(0xFFF1E4C5)
+private val PaperEdge = Color(0xFFCBB891)
+private val PaperFiber = Color(0xFFB8A67F)
+private val PaperInk = Color(0xFF2C241C)
+private val PaperMuted = Color(0xFF735F48)
+private val RollPaper = Color(0xFFE9DDBE)
+private val RollEdge = Color(0xFFC8B68D)
+private val RollInner = Color(0xFF8E7A58)
 
-// Prefer the actual DFKai-SB system family when a device provides it. Android falls
-// back to its platform CJK typeface if the family is unavailable.
-private val KaiFont = FontFamily(Typeface.create("DFKai-SB", Typeface.NORMAL))
+private val KaiFont = FontFamily(Font(R.font.tw_kai_98_1))
 
-private const val SUSPENSE_MILLIS = 2_350L
-private const val STICK_COMMIT_THRESHOLD = 0.72f
+private const val SUSPENSE_MILLIS = 2_550L
+private const val STICK_COMMIT_THRESHOLD = 0.74f
 private const val PAPER_COMMIT_THRESHOLD = 0.975f
 
 private enum class RitualStage {
@@ -119,15 +123,15 @@ private enum class RitualStage {
 fun DailyFortuneRoot(viewModel: FortuneViewModel) {
     val state by viewModel.uiState.collectAsState()
     val colors = darkColorScheme(
-        primary = TempleGold,
-        onPrimary = TempleInk,
-        background = TempleInk,
-        onBackground = Paper,
-        surface = TempleDeepRed,
-        onSurface = Paper,
+        primary = GoldLine,
+        onPrimary = BackgroundInk,
+        background = BackgroundInk,
+        onBackground = PaperBase,
+        surface = LacquerRedDark,
+        onSurface = PaperBase,
     )
     MaterialTheme(colorScheme = colors) {
-        Surface(modifier = Modifier.fillMaxSize(), color = TempleInk) {
+        Surface(modifier = Modifier.fillMaxSize(), color = BackgroundInk) {
             DailyFortuneScreen(
                 state = state,
                 onInitialDraw = viewModel::drawToday,
@@ -203,8 +207,8 @@ private fun DailyFortuneScreen(
         AnimatedContent(
             targetState = stage,
             transitionSpec = {
-                fadeIn(tween(330, easing = FastOutSlowInEasing)) togetherWith
-                    fadeOut(tween(260, easing = FastOutSlowInEasing))
+                fadeIn(tween(230, easing = FastOutSlowInEasing)) togetherWith
+                    fadeOut(tween(180, easing = FastOutSlowInEasing))
             },
             label = "ritual-stage",
         ) { currentStage ->
@@ -213,7 +217,7 @@ private fun DailyFortuneScreen(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center,
                 ) {
-                    CircularProgressIndicator(color = TempleGold)
+                    CircularProgressIndicator(color = GoldLine)
                 }
                 RitualStage.DRAW -> DrawStage(
                     isReroll = rerollFlow,
@@ -250,7 +254,7 @@ private fun DailyFortuneScreen(
                     .align(Alignment.BottomCenter)
                     .windowInsetsPadding(WindowInsets.safeDrawing)
                     .padding(16.dp),
-                color = Paper,
+                color = PaperBase,
                 fontFamily = KaiFont,
                 fontSize = 14.sp,
                 textAlign = TextAlign.Center,
@@ -264,87 +268,79 @@ private fun DistantTempleBackdrop() {
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(
-                Brush.verticalGradient(
-                    listOf(
-                        Color(0xFF0B0909),
-                        Color(0xFF17100D),
-                        Color(0xFF24130F),
-                        Color(0xFF100908),
-                    ),
-                ),
-            ),
+            .background(BackgroundInk),
     ) {
         Canvas(modifier = Modifier.fillMaxSize()) {
             val w = size.width
             val h = size.height
-            val horizon = h * 0.40f
+            val horizon = h * 0.34f
 
-            // A small, low-contrast temple silhouette sits well behind the interface.
-            // It deliberately avoids the old full-width top rules that read like a funeral frame.
-            val haze = Color(0xFFB56D3B).copy(alpha = 0.07f)
-            drawCircle(haze, radius = w * 0.42f, center = Offset(w * 0.50f, h * 0.27f))
-
-            val silhouette = Color(0xFF5F2A1D).copy(alpha = 0.20f)
-            val darkSilhouette = Color(0xFF2B1511).copy(alpha = 0.48f)
-
+            // Keep the temple small and distant. No decorative framing and no gradients.
             val roof = Path().apply {
-                moveTo(w * 0.25f, horizon)
-                quadraticTo(w * 0.34f, h * 0.33f, w * 0.43f, h * 0.35f)
-                lineTo(w * 0.50f, h * 0.30f)
-                lineTo(w * 0.57f, h * 0.35f)
-                quadraticTo(w * 0.66f, h * 0.33f, w * 0.75f, horizon)
-                lineTo(w * 0.67f, h * 0.39f)
-                lineTo(w * 0.57f, h * 0.40f)
-                lineTo(w * 0.50f, h * 0.36f)
-                lineTo(w * 0.43f, h * 0.40f)
-                lineTo(w * 0.33f, h * 0.39f)
+                moveTo(w * 0.31f, horizon)
+                lineTo(w * 0.39f, h * 0.305f)
+                lineTo(w * 0.46f, h * 0.315f)
+                lineTo(w * 0.50f, h * 0.285f)
+                lineTo(w * 0.54f, h * 0.315f)
+                lineTo(w * 0.61f, h * 0.305f)
+                lineTo(w * 0.69f, horizon)
+                lineTo(w * 0.61f, h * 0.333f)
+                lineTo(w * 0.54f, h * 0.338f)
+                lineTo(w * 0.50f, h * 0.315f)
+                lineTo(w * 0.46f, h * 0.338f)
+                lineTo(w * 0.39f, h * 0.333f)
                 close()
             }
-            drawPath(roof, silhouette)
+            drawPath(roof, TempleSilhouette.copy(alpha = 0.22f))
             drawRect(
-                darkSilhouette,
-                topLeft = Offset(w * 0.34f, horizon),
-                size = Size(w * 0.32f, h * 0.13f),
+                TempleSilhouetteDark.copy(alpha = 0.44f),
+                topLeft = Offset(w * 0.39f, horizon),
+                size = Size(w * 0.22f, h * 0.075f),
             )
-            repeat(4) { index ->
-                val x = w * (0.39f + index * 0.073f)
+            repeat(3) { index ->
+                val x = w * (0.435f + index * 0.065f)
                 drawRect(
-                    Color(0xFF8D3A24).copy(alpha = 0.13f),
-                    topLeft = Offset(x, horizon + h * 0.015f),
-                    size = Size(w * 0.025f, h * 0.105f),
+                    LacquerRedDark.copy(alpha = 0.16f),
+                    topLeft = Offset(x, horizon + h * 0.008f),
+                    size = Size(w * 0.018f, h * 0.060f),
                 )
             }
-            drawOval(
-                Color.Black.copy(alpha = 0.24f),
-                topLeft = Offset(-w * 0.15f, h * 0.47f),
-                size = Size(w * 1.30f, h * 0.26f),
+            drawRect(
+                BackgroundRaised.copy(alpha = 0.84f),
+                topLeft = Offset(0f, h * 0.48f),
+                size = Size(w, h * 0.52f),
             )
         }
     }
 }
 
 @Composable
-private fun TempleHeader(subtitle: String) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+private fun TempleHeader(
+    subtitle: String,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier,
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
         Text(
             text = "今日運勢",
-            color = TempleBrightGold,
+            color = GoldBright,
             fontFamily = KaiFont,
             fontSize = 34.sp,
-            fontWeight = FontWeight.Bold,
-            letterSpacing = 4.sp,
+            fontWeight = FontWeight.Normal,
+            letterSpacing = 1.5.sp,
             style = TextStyle(
-                shadow = Shadow(Color.Black.copy(alpha = 0.75f), Offset(0f, 3f), 6f),
+                shadow = Shadow(Color.Black.copy(alpha = 0.72f), Offset(0f, 2f), 4f),
             ),
         )
         Text(
             text = subtitle,
-            modifier = Modifier.padding(top = 9.dp),
-            color = Paper.copy(alpha = 0.90f),
+            modifier = Modifier.padding(top = 7.dp),
+            color = PaperBase.copy(alpha = 0.88f),
             fontFamily = KaiFont,
-            fontSize = 16.sp,
-            letterSpacing = 1.sp,
+            fontSize = 17.sp,
+            letterSpacing = 0.4.sp,
             textAlign = TextAlign.Center,
         )
     }
@@ -356,50 +352,72 @@ private fun DrawStage(
     enabled: Boolean,
     onStickCommitted: () -> Unit,
 ) {
-    Column(
+    Box(
         modifier = Modifier
             .fillMaxSize()
             .windowInsetsPadding(WindowInsets.safeDrawing)
-            .padding(horizontal = 20.dp, vertical = 20.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
+            .padding(horizontal = 18.dp, vertical = 16.dp),
     ) {
         TempleHeader(
-            subtitle = if (isReroll) "再抽一籤，逆天改命" else "親手抽出今天的命數",
+            subtitle = if (isReroll) "再抽一籤，逆天改命" else "親手抽出今天的籤",
+            modifier = Modifier.align(Alignment.TopCenter),
         )
-        Spacer(modifier = Modifier.height(24.dp))
-        Box(
-            modifier = Modifier.fillMaxWidth(),
-            contentAlignment = Alignment.Center,
+
+        Column(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            InteractiveHexFortuneTube(
+            Text(
+                text = "按住中央卷籤，往上抽出",
+                color = GoldBright,
+                fontFamily = KaiFont,
+                fontSize = 19.sp,
+                fontWeight = FontWeight.Normal,
+                letterSpacing = 0.6.sp,
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = "抽離籤筒後，命數才會落定",
+                color = PaperBase.copy(alpha = 0.76f),
+                fontFamily = KaiFont,
+                fontSize = 14.sp,
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            InteractiveFortuneTube(
                 enabled = enabled,
                 onStickCommitted = onStickCommitted,
             )
         }
-        Text(
-            text = "按住中央籤，往上抽出",
-            modifier = Modifier.padding(top = 10.dp),
-            color = TempleBrightGold,
-            fontFamily = KaiFont,
-            fontSize = 20.sp,
-            fontWeight = FontWeight.Bold,
-            letterSpacing = 2.sp,
-            style = TextStyle(
-                shadow = Shadow(Color.Black.copy(alpha = 0.70f), Offset(0f, 2f), 5f),
-            ),
+    }
+}
+
+@Composable
+private fun RolledPaperSlip(modifier: Modifier = Modifier) {
+    Canvas(modifier = modifier.size(width = 18.dp, height = 226.dp)) {
+        drawRoundRect(
+            color = RollPaper,
+            topLeft = Offset.Zero,
+            size = size,
+            cornerRadius = CornerRadius(size.width * 0.48f, size.width * 0.48f),
         )
-        Text(
-            text = "抽離籤筒後，命數才會落定",
-            modifier = Modifier.padding(top = 8.dp),
-            color = Paper.copy(alpha = 0.80f),
-            fontFamily = KaiFont,
-            fontSize = 14.sp,
+        drawLine(
+            color = RollEdge.copy(alpha = 0.82f),
+            start = Offset(size.width * 0.24f, size.height * 0.05f),
+            end = Offset(size.width * 0.24f, size.height * 0.95f),
+            strokeWidth = 1.2f,
+        )
+        drawOval(
+            color = RollInner.copy(alpha = 0.72f),
+            topLeft = Offset(size.width * 0.24f, size.height * 0.015f),
+            size = Size(size.width * 0.52f, size.width * 0.20f),
         )
     }
 }
 
 @Composable
-private fun InteractiveHexFortuneTube(
+private fun InteractiveFortuneTube(
     enabled: Boolean,
     onStickCommitted: () -> Unit,
 ) {
@@ -407,45 +425,26 @@ private fun InteractiveHexFortuneTube(
     val scope = rememberCoroutineScope()
     var dragProgress by remember { mutableFloatStateOf(0f) }
     var committed by remember { mutableStateOf(false) }
-    val smoothProgress by animateFloatAsState(
-        targetValue = dragProgress,
-        animationSpec = tween(90, easing = FastOutSlowInEasing),
-        label = "stick-pull",
-    )
 
     Box(
-        modifier = Modifier.size(width = 246.dp, height = 344.dp),
+        modifier = Modifier.size(width = 228.dp, height = 360.dp),
         contentAlignment = Alignment.TopCenter,
     ) {
-        // Rear sticks first: they belong inside the tube and therefore stay behind its rim/body.
-        Canvas(modifier = Modifier.fillMaxSize()) {
-            val w = size.width
-            val h = size.height
-            repeat(7) { index ->
-                val x = w * (0.29f + index * 0.07f)
-                val top = h * (0.11f + (index % 3) * 0.018f)
-                drawRoundRect(
-                    color = if (index % 2 == 0) Bamboo else Color(0xFFC79B58),
-                    topLeft = Offset(x, top),
-                    size = Size(w * 0.045f, h * 0.52f),
-                    cornerRadius = CornerRadius(w * 0.02f),
-                )
-            }
+        val rearOffsets = listOf(-66, -44, -22, 22, 44, 66)
+        rearOffsets.forEachIndexed { index, x ->
+            RolledPaperSlip(
+                modifier = Modifier.offset(
+                    x = x.dp,
+                    y = (32 + (index % 3) * 8).dp,
+                ),
+            )
         }
 
-        // The selected stick is drawn after rear sticks but BEFORE the tube face.
-        // The tube therefore occludes its lower half correctly while the exposed tip can be dragged out.
+        // Same paper roll as all the others; only its position and hit target differ.
         Box(
             modifier = Modifier
-                .offset(y = (-132f * smoothProgress).dp)
-                .padding(top = 17.dp)
-                .size(width = 34.dp, height = 222.dp)
-                .clip(RoundedCornerShape(10.dp))
-                .background(
-                    Brush.horizontalGradient(
-                        listOf(BambooDark, TempleBrightGold, Bamboo, BambooDark),
-                    ),
-                )
+                .offset(y = (20f - 150f * dragProgress).dp)
+                .size(width = 54.dp, height = 236.dp)
                 .pointerInput(enabled) {
                     if (!enabled) return@pointerInput
                     detectDragGestures(
@@ -456,8 +455,7 @@ private fun InteractiveHexFortuneTube(
                                 dragProgress = 1f
                                 haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                                 scope.launch {
-                                    // Let the physical pull finish before cross-fading into suspense.
-                                    delay(240L)
+                                    delay(190L)
                                     onStickCommitted()
                                 }
                             } else if (!committed) {
@@ -474,95 +472,81 @@ private fun InteractiveHexFortuneTube(
                 },
             contentAlignment = Alignment.TopCenter,
         ) {
-            Text(
-                text = "籤",
-                modifier = Modifier.padding(top = 10.dp),
-                color = TempleDeepRed,
-                fontFamily = KaiFont,
-                fontWeight = FontWeight.Bold,
-                fontSize = 19.sp,
-            )
+            RolledPaperSlip()
         }
 
-        // Hexagonal-prism tube foreground. This is intentionally drawn last so its
-        // opening and front faces sit in front of every stick that remains inside.
+        // Tall, straight hexagonal prism. The width is constant from top to bottom.
+        // It is drawn after the rolls so every roll visibly sits inside the container.
         Canvas(modifier = Modifier.fillMaxSize()) {
             val w = size.width
             val h = size.height
-            val topY = h * 0.42f
-            val bottomY = h * 0.94f
-
-            val body = Path().apply {
-                moveTo(w * 0.22f, topY)
-                lineTo(w * 0.78f, topY)
-                lineTo(w * 0.86f, h * 0.84f)
-                lineTo(w * 0.70f, bottomY)
-                lineTo(w * 0.30f, bottomY)
-                lineTo(w * 0.14f, h * 0.84f)
-                close()
-            }
-            drawPath(
-                body,
-                brush = Brush.verticalGradient(
-                    listOf(Color(0xFFB63825), Color(0xFF72170F), Color(0xFF3B0907)),
-                    startY = topY,
-                    endY = bottomY,
-                ),
-            )
+            val topBackY = h * 0.36f
+            val topFrontY = h * 0.405f
+            val bottomY = h * 0.97f
+            val outerLeft = w * 0.13f
+            val frontLeft = w * 0.24f
+            val frontRight = w * 0.76f
+            val outerRight = w * 0.87f
 
             val leftFace = Path().apply {
-                moveTo(w * 0.22f, topY)
-                lineTo(w * 0.34f, h * 0.47f)
-                lineTo(w * 0.36f, h * 0.90f)
-                lineTo(w * 0.30f, bottomY)
-                lineTo(w * 0.14f, h * 0.84f)
+                moveTo(outerLeft, topBackY)
+                lineTo(frontLeft, topFrontY)
+                lineTo(frontLeft, bottomY)
+                lineTo(outerLeft, bottomY - h * 0.025f)
                 close()
             }
-            drawPath(leftFace, Color(0xFF53100C).copy(alpha = 0.70f))
-
+            val frontFace = Path().apply {
+                moveTo(frontLeft, topFrontY)
+                lineTo(frontRight, topFrontY)
+                lineTo(frontRight, bottomY)
+                lineTo(frontLeft, bottomY)
+                close()
+            }
             val rightFace = Path().apply {
-                moveTo(w * 0.78f, topY)
-                lineTo(w * 0.66f, h * 0.47f)
-                lineTo(w * 0.64f, h * 0.90f)
-                lineTo(w * 0.70f, bottomY)
-                lineTo(w * 0.86f, h * 0.84f)
+                moveTo(frontRight, topFrontY)
+                lineTo(outerRight, topBackY)
+                lineTo(outerRight, bottomY - h * 0.025f)
+                lineTo(frontRight, bottomY)
                 close()
             }
-            drawPath(rightFace, Color(0xFF8D2116).copy(alpha = 0.52f))
 
-            drawPath(body, TempleGold.copy(alpha = 0.92f), style = Stroke(3.5f))
+            drawPath(leftFace, LacquerRedDark)
+            drawPath(frontFace, LacquerRed)
+            drawPath(rightFace, LacquerRedSide)
 
             val opening = Path().apply {
-                moveTo(w * 0.22f, topY)
-                lineTo(w * 0.34f, h * 0.375f)
-                lineTo(w * 0.66f, h * 0.375f)
-                lineTo(w * 0.78f, topY)
-                lineTo(w * 0.66f, h * 0.47f)
-                lineTo(w * 0.34f, h * 0.47f)
+                moveTo(outerLeft, topBackY)
+                lineTo(w * 0.34f, h * 0.325f)
+                lineTo(w * 0.66f, h * 0.325f)
+                lineTo(outerRight, topBackY)
+                lineTo(frontRight, topFrontY)
+                lineTo(frontLeft, topFrontY)
                 close()
             }
-            drawPath(opening, Color(0xFF170503).copy(alpha = 0.97f))
-            drawPath(opening, TempleBrightGold.copy(alpha = 0.92f), style = Stroke(3.2f))
+            drawPath(opening, Color(0xFF160907))
+            drawPath(opening, GoldLine.copy(alpha = 0.92f), style = Stroke(2.8f))
+            drawPath(leftFace, GoldLine.copy(alpha = 0.72f), style = Stroke(2.0f))
+            drawPath(frontFace, GoldLine.copy(alpha = 0.72f), style = Stroke(2.0f))
+            drawPath(rightFace, GoldLine.copy(alpha = 0.72f), style = Stroke(2.0f))
 
             drawLine(
-                color = TempleBrightGold.copy(alpha = 0.75f),
-                start = Offset(w * 0.28f, h * 0.56f),
-                end = Offset(w * 0.72f, h * 0.56f),
-                strokeWidth = 3.5f,
+                color = GoldLine.copy(alpha = 0.70f),
+                start = Offset(frontLeft + w * 0.06f, h * 0.53f),
+                end = Offset(frontRight - w * 0.06f, h * 0.53f),
+                strokeWidth = 2.2f,
                 cap = StrokeCap.Round,
             )
         }
 
         Text(
             text = "籤",
-            modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 46.dp),
-            color = TempleBrightGold,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 50.dp),
+            color = GoldBright,
             fontFamily = KaiFont,
-            fontSize = 44.sp,
-            fontWeight = FontWeight.Bold,
-            style = TextStyle(
-                shadow = Shadow(Color.Black.copy(alpha = 0.55f), Offset(0f, 3f), 5f),
-            ),
+            fontSize = 42.sp,
+            fontWeight = FontWeight.Normal,
         )
     }
 }
@@ -570,48 +554,41 @@ private fun InteractiveHexFortuneTube(
 @Composable
 private fun SuspenseStage(ritualNonce: Int) {
     val progress = remember(ritualNonce) { Animatable(0f) }
-    val infinite = rememberInfiniteTransition(label = "suspense-pulse")
-    val pulse by infinite.animateFloat(
-        initialValue = 0.55f,
+    val pulseTransition = rememberInfiniteTransition(label = "suspense-pulse")
+    val pulse by pulseTransition.animateFloat(
+        initialValue = 0.72f,
         targetValue = 1f,
         animationSpec = infiniteRepeatable(
-            tween(430, easing = FastOutSlowInEasing),
+            tween(520, easing = FastOutSlowInEasing),
             repeatMode = RepeatMode.Reverse,
         ),
         label = "suspense-pulse-value",
     )
+
     LaunchedEffect(ritualNonce) {
         progress.snapTo(0f)
         progress.animateTo(1f, tween(SUSPENSE_MILLIS.toInt(), easing = FastOutSlowInEasing))
     }
 
     val p = progress.value
-    val stickAlpha = (1f - (p - 0.36f).coerceAtLeast(0f) / 0.36f).coerceIn(0f, 1f)
-    val sealAlpha = ((p - 0.16f) / 0.48f).coerceIn(0f, 1f)
-    val lateGlow = ((p - 0.56f) / 0.44f).coerceIn(0f, 1f)
+    val rollAlpha = (1f - ((p - 0.40f) / 0.22f).coerceIn(0f, 1f))
+    val sealAlpha = ((p - 0.28f) / 0.36f).coerceIn(0f, 1f)
+    val rayAlpha = ((p - 0.52f) / 0.48f).coerceIn(0f, 1f)
 
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(
-                Brush.radialGradient(
-                    listOf(
-                        Color(0xFF6A1710).copy(alpha = 0.90f),
-                        Color(0xFF2E0A08).copy(alpha = 0.96f),
-                        Color(0xFF090706),
-                    ),
-                ),
-            ),
+            .background(BackgroundInk),
         contentAlignment = Alignment.Center,
     ) {
         Canvas(modifier = Modifier.fillMaxSize()) {
-            val center = Offset(size.width / 2f, size.height / 2f)
-            repeat(28) { index ->
-                val angle = 2.0 * PI * index / 28.0
-                val inner = size.minDimension * (0.13f + lateGlow * 0.03f)
-                val outer = size.minDimension * (0.25f + lateGlow * 0.15f * pulse)
+            val center = Offset(size.width / 2f, size.height * 0.43f)
+            repeat(24) { index ->
+                val angle = 2.0 * PI * index / 24.0
+                val inner = size.minDimension * 0.12f
+                val outer = size.minDimension * (0.18f + 0.08f * pulse)
                 drawLine(
-                    color = TempleGold.copy(alpha = (0.03f + lateGlow * 0.23f) * pulse),
+                    color = GoldLine.copy(alpha = rayAlpha * if (index % 3 == 0) 0.36f else 0.16f),
                     start = Offset(
                         center.x + cos(angle).toFloat() * inner,
                         center.y + sin(angle).toFloat() * inner,
@@ -620,64 +597,51 @@ private fun SuspenseStage(ritualNonce: Int) {
                         center.x + cos(angle).toFloat() * outer,
                         center.y + sin(angle).toFloat() * outer,
                     ),
-                    strokeWidth = if (index % 4 == 0) 3f else 1.2f,
+                    strokeWidth = if (index % 3 == 0) 2.2f else 1.1f,
                     cap = StrokeCap.Round,
                 )
             }
-        }
-
-        // Continue the same visual object that the user just pulled: the stick rises,
-        // slows, and dissolves into the reveal seal instead of cutting to an unrelated screen.
-        Box(
-            modifier = Modifier
-                .offset(y = (80f - p * 150f).dp)
-                .graphicsLayer {
-                    alpha = stickAlpha
-                    scaleX = 0.96f + p * 0.08f
-                    scaleY = 0.96f + p * 0.08f
-                }
-                .size(width = 34.dp, height = 224.dp)
-                .clip(RoundedCornerShape(10.dp))
-                .background(
-                    Brush.horizontalGradient(
-                        listOf(BambooDark, TempleBrightGold, Bamboo, BambooDark),
-                    ),
-                ),
-        )
-
-        Box(
-            modifier = Modifier
-                .graphicsLayer {
-                    alpha = sealAlpha
-                    scaleX = 0.72f + sealAlpha * 0.28f
-                    scaleY = 0.72f + sealAlpha * 0.28f
-                }
-                .size(154.dp),
-            contentAlignment = Alignment.Center,
-        ) {
-            Canvas(modifier = Modifier.fillMaxSize()) {
-                drawCircle(
-                    color = TempleGold.copy(alpha = 0.24f + lateGlow * 0.30f),
-                    radius = size.minDimension * (0.44f + lateGlow * 0.03f * pulse),
-                    style = Stroke(5f),
-                )
-                drawCircle(
-                    color = TempleBrightGold.copy(alpha = 0.15f + lateGlow * 0.22f),
-                    radius = size.minDimension * 0.34f,
-                    style = Stroke(2f),
-                )
-            }
-            Text(
-                text = "命",
-                color = TempleBrightGold,
-                fontFamily = KaiFont,
-                fontSize = 68.sp,
-                fontWeight = FontWeight.Bold,
-                style = TextStyle(
-                    shadow = Shadow(Color.Black.copy(alpha = 0.82f), Offset(0f, 4f), 8f),
-                ),
+            drawCircle(
+                color = GoldLine.copy(alpha = sealAlpha * 0.40f),
+                radius = size.minDimension * 0.105f,
+                center = center,
+                style = Stroke(2.8f),
+            )
+            drawCircle(
+                color = GoldBright.copy(alpha = sealAlpha * 0.26f),
+                radius = size.minDimension * 0.075f,
+                center = center,
+                style = Stroke(1.5f),
             )
         }
+
+        Box(
+            modifier = Modifier
+                .align(Alignment.Center)
+                .offset(y = (175f - p * 250f).dp)
+                .graphicsLayer { alpha = rollAlpha },
+        ) {
+            RolledPaperSlip()
+        }
+
+        Text(
+            text = "命",
+            modifier = Modifier
+                .align(Alignment.Center)
+                .offset(y = (-54).dp)
+                .graphicsLayer {
+                    alpha = sealAlpha
+                    scaleX = 0.82f + sealAlpha * 0.18f
+                    scaleY = 0.82f + sealAlpha * 0.18f
+                },
+            color = GoldBright,
+            fontFamily = KaiFont,
+            fontSize = 64.sp,
+            fontWeight = FontWeight.Normal,
+            style = TextStyle(
+                shadow = Shadow(Color.Black.copy(alpha = 0.80f), Offset(0f, 3f), 5f),
+            ),
+        )
 
         AnimatedContent(
             targetState = when {
@@ -687,22 +651,21 @@ private fun SuspenseStage(ritualNonce: Int) {
             },
             modifier = Modifier
                 .align(Alignment.Center)
-                .offset(y = 146.dp),
-            transitionSpec = { fadeIn(tween(260)) togetherWith fadeOut(tween(220)) },
+                .offset(y = 112.dp),
+            transitionSpec = { fadeIn(tween(220)) togetherWith fadeOut(tween(180)) },
             label = "suspense-copy",
         ) { beat ->
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(
                     text = when (beat) {
                         0 -> "籤已離筒"
-                        1 -> "五運正在落定"
+                        1 -> "命數正在落定"
                         else -> "命數已定"
                     },
-                    color = TempleBrightGold,
+                    color = GoldBright,
                     fontFamily = KaiFont,
-                    fontSize = 26.sp,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 3.sp,
+                    fontSize = 27.sp,
+                    fontWeight = FontWeight.Normal,
                 )
                 Text(
                     text = when (beat) {
@@ -711,10 +674,9 @@ private fun SuspenseStage(ritualNonce: Int) {
                         else -> "親手揭開"
                     },
                     modifier = Modifier.padding(top = 8.dp),
-                    color = Paper.copy(alpha = 0.84f),
+                    color = PaperBase.copy(alpha = 0.82f),
                     fontFamily = KaiFont,
                     fontSize = 15.sp,
-                    letterSpacing = 1.sp,
                 )
             }
         }
@@ -735,13 +697,13 @@ private fun PaperStage(
             .fillMaxSize()
             .windowInsetsPadding(WindowInsets.safeDrawing)
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = 16.dp, vertical = 18.dp),
+            .padding(horizontal = 16.dp, vertical = 14.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         TempleHeader(
-            subtitle = if (completed) "今日籤意已現" else "按住籤紙下緣，往下慢慢揭開",
+            subtitle = if (completed) "今日籤意已現" else "按住籤紙下緣，慢慢往下揭開",
         )
-        Spacer(modifier = Modifier.height(20.dp))
+        Spacer(modifier = Modifier.height(14.dp))
         FortunePaper(
             draw = draw,
             revealFraction = progress,
@@ -756,22 +718,23 @@ private fun PaperStage(
             Button(
                 onClick = onReroll,
                 modifier = Modifier
-                    .widthIn(max = 236.dp)
-                    .fillMaxWidth(0.64f)
+                    .fillMaxWidth(0.78f)
+                    .widthIn(max = 280.dp)
                     .height(54.dp),
-                shape = RoundedCornerShape(8.dp),
-                border = BorderStroke(1.dp, TempleBrightGold.copy(alpha = 0.90f)),
+                shape = RoundedCornerShape(6.dp),
+                border = BorderStroke(1.dp, GoldLine),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = TempleCinnabar,
-                    contentColor = Paper,
+                    containerColor = LacquerRed,
+                    contentColor = PaperBase,
                 ),
             ) {
                 Text(
                     text = "逆天改命!!",
                     fontFamily = KaiFont,
-                    fontSize = 19.sp,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 2.sp,
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Normal,
+                    maxLines = 1,
+                    softWrap = false,
                 )
             }
         }
@@ -788,8 +751,8 @@ private fun FortunePaper(
     onRevealEnd: () -> Unit,
 ) {
     val density = LocalDensity.current
-    val minHeightDp = 76.dp
-    val fullHeightDp = 594.dp
+    val minHeightDp = 70.dp
+    val fullHeightDp = 660.dp
     val travelPx = with(density) { (fullHeightDp - minHeightDp).toPx() }
     val visibleHeightDp = minHeightDp + (fullHeightDp - minHeightDp) * revealFraction
     val latestDelta by rememberUpdatedState(onRevealDelta)
@@ -797,50 +760,68 @@ private fun FortunePaper(
 
     Box(
         modifier = Modifier
-            .widthIn(max = 228.dp)
-            .fillMaxWidth(0.62f)
+            .fillMaxWidth(0.82f)
+            .widthIn(max = 300.dp)
             .height(visibleHeightDp)
-            .clip(RoundedCornerShape(6.dp))
+            .clip(RoundedCornerShape(3.dp))
             .clipToBounds()
-            .background(
-                Brush.horizontalGradient(
-                    listOf(PaperShade, Paper, Color(0xFFF8EDCF), Paper, PaperShade),
-                ),
-            ),
+            .background(PaperBase)
+            .border(1.dp, PaperEdge, RoundedCornerShape(3.dp)),
     ) {
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            // Sparse paper fibers: material hint without any color gradient.
+            listOf(0.12f, 0.37f, 0.63f, 0.86f).forEach { fraction ->
+                drawLine(
+                    color = PaperFiber.copy(alpha = 0.09f),
+                    start = Offset(size.width * fraction, 0f),
+                    end = Offset(size.width * fraction + 4f, size.height),
+                    strokeWidth = 1f,
+                )
+            }
+        }
+
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(fullHeightDp)
-                .padding(horizontal = 14.dp, vertical = 14.dp),
+                .padding(horizontal = 12.dp, vertical = 14.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Text(
-                text = "今 日 籤",
-                color = TempleDeepRed,
+                text = "今日籤",
+                color = LacquerRedDark,
                 fontFamily = KaiFont,
-                fontSize = 21.sp,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 4.sp,
+                fontSize = 23.sp,
+                fontWeight = FontWeight.Normal,
+                letterSpacing = 1.5.sp,
             )
             Box(
                 modifier = Modifier
-                    .padding(top = 7.dp, bottom = 7.dp)
-                    .fillMaxWidth(0.72f)
+                    .padding(top = 8.dp, bottom = 6.dp)
+                    .fillMaxWidth(0.84f)
                     .height(1.dp)
-                    .background(TempleRed.copy(alpha = 0.32f)),
+                    .background(LacquerRedDark.copy(alpha = 0.44f)),
             )
+
             FortuneDomain.entries.forEach { domain ->
                 val grade = FortuneGrade.fromScore(draw.domainScores.getValue(domain))
                 DomainFortuneRow(label = domain.label, grade = grade)
             }
-            Spacer(modifier = Modifier.height(8.dp))
+
+            Spacer(modifier = Modifier.height(6.dp))
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth(0.76f)
+                    .height(1.dp)
+                    .background(PaperEdge.copy(alpha = 0.70f)),
+            )
             Text(
                 text = "總體",
-                color = MutedInk,
+                modifier = Modifier.padding(top = 12.dp),
+                color = PaperMuted,
                 fontFamily = KaiFont,
-                fontSize = 14.sp,
-                letterSpacing = 2.sp,
+                fontSize = 16.sp,
+                letterSpacing = 1.sp,
             )
             GradeMark(
                 grade = draw.overallGrade,
@@ -854,20 +835,14 @@ private fun FortunePaper(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .fillMaxWidth()
-                    .height(46.dp)
-                    .background(
-                        Brush.verticalGradient(
-                            listOf(Color.Transparent, PaperShade.copy(alpha = 0.94f)),
-                        ),
-                    )
+                    .height(52.dp)
                     .pointerInput(interactive, travelPx) {
                         detectDragGestures(
                             onDragEnd = { latestEnd() },
                             onDragCancel = { latestEnd() },
                         ) { change, amount ->
                             change.consume()
-                            // 1 px of finger movement changes the paper edge by 1 px.
-                            // No artificial multiplier: the lower edge remains physically attached to the finger.
+                            // Physical 1:1 mapping: the visible paper edge moves exactly with the finger.
                             latestDelta(amount.y / travelPx)
                         }
                     },
@@ -875,10 +850,10 @@ private fun FortunePaper(
             ) {
                 Box(
                     modifier = Modifier
-                        .padding(bottom = 8.dp)
-                        .size(width = 74.dp, height = 4.dp)
-                        .clip(RoundedCornerShape(2.dp))
-                        .background(TempleRed.copy(alpha = 0.46f)),
+                        .padding(bottom = 9.dp)
+                        .width(78.dp)
+                        .height(3.dp)
+                        .background(LacquerRedDark.copy(alpha = 0.52f)),
                 )
             }
         }
@@ -890,25 +865,31 @@ private fun DomainFortuneRow(label: String, grade: FortuneGrade) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(66.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
+            .height(70.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
             text = label,
+            modifier = Modifier.width(106.dp),
             color = PaperInk,
             fontFamily = KaiFont,
-            fontSize = if (label.length > 4) 14.sp else 16.sp,
+            fontSize = if (label.length >= 5) 16.sp else 18.sp,
             fontWeight = FontWeight.Normal,
             maxLines = 1,
+            softWrap = false,
         )
-        GradeMark(grade = grade, large = false)
+        Box(
+            modifier = Modifier.weight(1f),
+            contentAlignment = Alignment.Center,
+        ) {
+            GradeMark(grade = grade, large = false)
+        }
     }
 }
 
 private data class GradeVisual(
     val text: Color,
-    val aura: Color,
+    val effect: Color,
     val secondary: Color,
     val strength: Float,
     val positive: Boolean,
@@ -917,57 +898,57 @@ private data class GradeVisual(
 
 private fun gradeVisual(grade: FortuneGrade): GradeVisual = when (grade) {
     FortuneGrade.DAI_XIONG -> GradeVisual(
-        text = Color(0xFF170707),
-        aura = Color(0xFF250000),
-        secondary = Color(0xFF7B0D0D),
+        text = Color(0xFF160A09),
+        effect = Color(0xFF0A0505),
+        secondary = Color(0xFF6A1612),
         strength = 1f,
         positive = false,
         extreme = true,
     )
     FortuneGrade.XIONG -> GradeVisual(
-        text = Color(0xFF4C1110),
-        aura = Color(0xFF3C0908),
-        secondary = Color(0xFF8E2A22),
-        strength = 0.72f,
+        text = Color(0xFF4A1714),
+        effect = Color(0xFF2A0F0D),
+        secondary = Color(0xFF7C2C24),
+        strength = 0.70f,
         positive = false,
         extreme = false,
     )
     FortuneGrade.XIAO_XIONG -> GradeVisual(
-        text = Color(0xFF713026),
-        aura = Color(0xFF5A241D),
-        secondary = Color(0xFFA45C4C),
+        text = Color(0xFF6D3028),
+        effect = Color(0xFF5A2A23),
+        secondary = Color(0xFF9A5A4E),
         strength = 0.42f,
         positive = false,
         extreme = false,
     )
     FortuneGrade.PING -> GradeVisual(
-        text = Color(0xFF594735),
-        aura = Color(0xFF8C6F45),
-        secondary = Color(0xFF9C7A4F),
-        strength = 0.16f,
+        text = Color(0xFF574A3A),
+        effect = Color(0xFF8A785E),
+        secondary = Color(0xFF8A785E),
+        strength = 0.18f,
         positive = true,
         extreme = false,
     )
     FortuneGrade.XIAO_JI -> GradeVisual(
-        text = Color(0xFF9A5C08),
-        aura = Color(0xFFC89020),
-        secondary = Color(0xFFE4B84E),
+        text = Color(0xFF8B5A13),
+        effect = Color(0xFFB98021),
+        secondary = Color(0xFFD5A23D),
         strength = 0.42f,
         positive = true,
         extreme = false,
     )
     FortuneGrade.JI -> GradeVisual(
-        text = Color(0xFFB26800),
-        aura = Color(0xFFE7AC28),
-        secondary = Color(0xFFFFD86B),
+        text = Color(0xFFA86505),
+        effect = Color(0xFFD7A02C),
+        secondary = Color(0xFFEBC968),
         strength = 0.72f,
         positive = true,
         extreme = false,
     )
     FortuneGrade.DAI_JI -> GradeVisual(
-        text = Color(0xFFC97700),
-        aura = Color(0xFFFFC21F),
-        secondary = Color(0xFFFFED96),
+        text = Color(0xFFB86E00),
+        effect = Color(0xFFF0B72A),
+        secondary = Color(0xFFFFDC72),
         strength = 1f,
         positive = true,
         extreme = true,
@@ -982,34 +963,34 @@ private fun GradeMark(
 ) {
     val visual = gradeVisual(grade)
     val infinite = rememberInfiniteTransition(label = "grade-${grade.name}")
-    val pulse by infinite.animateFloat(
+    val phase by infinite.animateFloat(
         initialValue = 0f,
         targetValue = 1f,
         animationSpec = infiniteRepeatable(
             animation = tween(
                 durationMillis = when (grade) {
-                    FortuneGrade.DAI_JI -> 780
-                    FortuneGrade.DAI_XIONG -> 1_180
+                    FortuneGrade.DAI_JI -> 820
+                    FortuneGrade.DAI_XIONG -> 1_080
                     else -> 1_500
                 },
                 easing = LinearEasing,
             ),
             repeatMode = RepeatMode.Restart,
         ),
-        label = "grade-effect-progress",
+        label = "grade-phase",
     )
     val breathe by infinite.animateFloat(
         initialValue = 0.88f,
         targetValue = 1f,
         animationSpec = infiniteRepeatable(
-            tween(if (visual.extreme) 560 else 1_050, easing = FastOutSlowInEasing),
+            tween(if (visual.extreme) 540 else 1_050, easing = FastOutSlowInEasing),
             repeatMode = RepeatMode.Reverse,
         ),
         label = "grade-breathe",
     )
 
-    val width = if (large) 154.dp else 92.dp
-    val height = if (large) 96.dp else 54.dp
+    val width = if (large) 184.dp else 124.dp
+    val height = if (large) 116.dp else 62.dp
 
     Box(
         modifier = modifier.size(width = width, height = height),
@@ -1019,153 +1000,185 @@ private fun GradeMark(
             val center = Offset(size.width / 2f, size.height / 2f)
             val minDim = size.minDimension
 
-            if (grade == FortuneGrade.PING) {
-                drawCircle(
-                    color = visual.aura.copy(alpha = 0.14f),
-                    radius = minDim * 0.32f,
-                    center = center,
-                    style = Stroke(1.5f),
-                )
-            } else if (visual.positive) {
-                val rayCount = when (grade) {
-                    FortuneGrade.XIAO_JI -> 6
-                    FortuneGrade.JI -> 12
-                    FortuneGrade.DAI_JI -> 20
-                    else -> 0
-                }
-                val haloAlpha = (0.08f + visual.strength * 0.18f) * breathe
-                drawCircle(
-                    color = visual.aura.copy(alpha = haloAlpha),
-                    radius = minDim * (0.30f + 0.05f * breathe),
-                    center = center,
-                    style = Stroke(if (visual.extreme) 5f else 2.5f),
-                )
-                if (visual.extreme) {
+            when {
+                grade == FortuneGrade.PING -> {
                     drawCircle(
-                        color = visual.secondary.copy(alpha = 0.18f * breathe),
-                        radius = minDim * (0.40f + 0.04f * breathe),
+                        color = visual.effect.copy(alpha = 0.20f),
+                        radius = minDim * 0.31f,
                         center = center,
-                        style = Stroke(2f),
+                        style = Stroke(1.2f),
                     )
                 }
-                repeat(rayCount) { index ->
-                    val angle = 2.0 * PI * index / rayCount + pulse * 0.22
-                    val inner = minDim * 0.26f
-                    val outer = minDim * (0.35f + visual.strength * 0.12f * breathe)
-                    drawLine(
-                        color = visual.aura.copy(alpha = 0.13f + visual.strength * 0.26f),
-                        start = Offset(
-                            center.x + cos(angle).toFloat() * inner,
-                            center.y + sin(angle).toFloat() * inner,
-                        ),
-                        end = Offset(
-                            center.x + cos(angle).toFloat() * outer,
-                            center.y + sin(angle).toFloat() * outer,
-                        ),
-                        strokeWidth = if (visual.extreme && index % 2 == 0) 3f else 1.5f,
-                        cap = StrokeCap.Round,
-                    )
-                }
-                val sparks = when (grade) {
-                    FortuneGrade.XIAO_JI -> 3
-                    FortuneGrade.JI -> 6
-                    FortuneGrade.DAI_JI -> 12
-                    else -> 0
-                }
-                repeat(sparks) { index ->
-                    val angle = 2.0 * PI * index / sparks + 0.45
-                    val radius = minDim * (0.30f + ((pulse + index * 0.13f) % 1f) * 0.18f)
-                    val x = center.x + cos(angle).toFloat() * radius
-                    val y = center.y + sin(angle).toFloat() * radius
-                    val sparkColor = if (grade == FortuneGrade.DAI_JI) {
-                        listOf(
-                            Color(0xFFFFD84F),
-                            Color(0xFFFF8ED7),
-                            Color(0xFF8EEBFF),
-                            Color(0xFFD5A6FF),
-                        )[index % 4]
-                    } else {
-                        visual.secondary
+                visual.positive -> {
+                    val rayCount = when (grade) {
+                        FortuneGrade.XIAO_JI -> 6
+                        FortuneGrade.JI -> 12
+                        FortuneGrade.DAI_JI -> 22
+                        else -> 0
                     }
-                    drawLine(
-                        sparkColor.copy(alpha = 0.42f + 0.38f * breathe),
-                        Offset(x - 4f, y),
-                        Offset(x + 4f, y),
-                        strokeWidth = 1.8f,
-                        cap = StrokeCap.Round,
-                    )
-                    drawLine(
-                        sparkColor.copy(alpha = 0.42f + 0.38f * breathe),
-                        Offset(x, y - 4f),
-                        Offset(x, y + 4f),
-                        strokeWidth = 1.8f,
-                        cap = StrokeCap.Round,
-                    )
-                }
-            } else {
-                val ashCount = when (grade) {
-                    FortuneGrade.XIAO_XIONG -> 3
-                    FortuneGrade.XIONG -> 6
-                    FortuneGrade.DAI_XIONG -> 11
-                    else -> 0
-                }
-                repeat(ashCount) { index ->
-                    val x = size.width * (0.18f + (index % 5) * 0.16f)
-                    val phase = (pulse + index * 0.17f) % 1f
-                    val y = size.height * (0.25f + phase * 0.62f)
-                    val radius = if (grade == FortuneGrade.DAI_XIONG) 3.2f else 2.2f
                     drawCircle(
-                        color = visual.aura.copy(alpha = 0.10f + visual.strength * 0.24f * (1f - phase)),
-                        radius = radius,
-                        center = Offset(x, y),
+                        color = visual.effect.copy(alpha = (0.12f + visual.strength * 0.18f) * breathe),
+                        radius = minDim * (0.29f + 0.04f * breathe),
+                        center = center,
+                        style = Stroke(if (visual.extreme) 4.2f else 2.0f),
                     )
-                }
-                if (grade == FortuneGrade.XIONG || grade == FortuneGrade.DAI_XIONG) {
-                    repeat(if (grade == FortuneGrade.DAI_XIONG) 5 else 2) { index ->
-                        val x = size.width * (0.30f + index * 0.10f)
-                        val y = size.height * (0.35f + index * 0.08f)
+                    repeat(rayCount) { index ->
+                        val angle = 2.0 * PI * index / rayCount + phase * 0.18
+                        val inner = minDim * 0.29f
+                        val outer = minDim * (0.36f + visual.strength * 0.11f * breathe)
                         drawLine(
-                            color = visual.secondary.copy(alpha = 0.20f + visual.strength * 0.18f),
-                            start = Offset(x, y),
-                            end = Offset(x - 8f, y + 10f),
+                            color = visual.effect.copy(alpha = 0.16f + visual.strength * 0.30f),
+                            start = Offset(
+                                center.x + cos(angle).toFloat() * inner,
+                                center.y + sin(angle).toFloat() * inner,
+                            ),
+                            end = Offset(
+                                center.x + cos(angle).toFloat() * outer,
+                                center.y + sin(angle).toFloat() * outer,
+                            ),
+                            strokeWidth = if (visual.extreme && index % 2 == 0) 2.8f else 1.3f,
+                            cap = StrokeCap.Round,
+                        )
+                    }
+
+                    val sparkCount = when (grade) {
+                        FortuneGrade.XIAO_JI -> 2
+                        FortuneGrade.JI -> 5
+                        FortuneGrade.DAI_JI -> 12
+                        else -> 0
+                    }
+                    repeat(sparkCount) { index ->
+                        val angle = 2.0 * PI * index / sparkCount + 0.35
+                        val radius = minDim * (0.31f + ((phase + index * 0.11f) % 1f) * 0.15f)
+                        val x = center.x + cos(angle).toFloat() * radius
+                        val y = center.y + sin(angle).toFloat() * radius
+                        val sparkColor = if (grade == FortuneGrade.DAI_JI) {
+                            listOf(
+                                Color(0xFFFFC928),
+                                Color(0xFFFF7DB7),
+                                Color(0xFF63D8FF),
+                                Color(0xFF8DE37B),
+                            )[index % 4]
+                        } else {
+                            visual.secondary
+                        }
+                        drawLine(
+                            color = sparkColor.copy(alpha = 0.50f + 0.36f * breathe),
+                            start = Offset(x - 4f, y),
+                            end = Offset(x + 4f, y),
+                            strokeWidth = 1.7f,
+                            cap = StrokeCap.Round,
+                        )
+                        drawLine(
+                            color = sparkColor.copy(alpha = 0.50f + 0.36f * breathe),
+                            start = Offset(x, y - 4f),
+                            end = Offset(x, y + 4f),
+                            strokeWidth = 1.7f,
+                            cap = StrokeCap.Round,
+                        )
+                    }
+                }
+                else -> {
+                    // Negative grades use falling ash / ink pressure rather than warm light.
+                    if (grade == FortuneGrade.DAI_XIONG) {
+                        drawCircle(
+                            color = Color.Black.copy(alpha = 0.22f + 0.10f * breathe),
+                            radius = minDim * 0.39f,
+                            center = center,
+                        )
+                        drawCircle(
+                            color = visual.secondary.copy(alpha = 0.13f),
+                            radius = minDim * 0.42f,
+                            center = center,
+                            style = Stroke(2f),
+                        )
+                    }
+
+                    val ashCount = when (grade) {
+                        FortuneGrade.XIAO_XIONG -> 3
+                        FortuneGrade.XIONG -> 6
+                        FortuneGrade.DAI_XIONG -> 12
+                        else -> 0
+                    }
+                    repeat(ashCount) { index ->
+                        val x = size.width * (0.18f + (index % 5) * 0.16f)
+                        val local = (phase + index * 0.13f) % 1f
+                        val y = size.height * (0.18f + local * 0.70f)
+                        drawCircle(
+                            color = visual.effect.copy(alpha = 0.14f + visual.strength * 0.28f * (1f - local)),
+                            radius = if (visual.extreme) 3.2f else 2.1f,
+                            center = Offset(x, y),
+                        )
+                    }
+
+                    val crackCount = when (grade) {
+                        FortuneGrade.XIAO_XIONG -> 0
+                        FortuneGrade.XIONG -> 2
+                        FortuneGrade.DAI_XIONG -> 5
+                        else -> 0
+                    }
+                    repeat(crackCount) { index ->
+                        val angle = 2.0 * PI * index / crackCount + 0.25
+                        val startRadius = minDim * 0.28f
+                        val midRadius = minDim * 0.38f
+                        val endRadius = minDim * 0.48f
+                        val start = Offset(
+                            center.x + cos(angle).toFloat() * startRadius,
+                            center.y + sin(angle).toFloat() * startRadius,
+                        )
+                        val mid = Offset(
+                            center.x + cos(angle + 0.14).toFloat() * midRadius,
+                            center.y + sin(angle + 0.14).toFloat() * midRadius,
+                        )
+                        val end = Offset(
+                            center.x + cos(angle - 0.08).toFloat() * endRadius,
+                            center.y + sin(angle - 0.08).toFloat() * endRadius,
+                        )
+                        drawLine(
+                            color = visual.secondary.copy(alpha = 0.30f + 0.20f * visual.strength),
+                            start = start,
+                            end = mid,
                             strokeWidth = 1.3f,
                         )
                         drawLine(
-                            color = visual.secondary.copy(alpha = 0.18f + visual.strength * 0.16f),
-                            start = Offset(x - 8f, y + 10f),
-                            end = Offset(x - 2f, y + 18f),
-                            strokeWidth = 1.1f,
+                            color = visual.secondary.copy(alpha = 0.24f + 0.18f * visual.strength),
+                            start = mid,
+                            end = end,
+                            strokeWidth = 1.0f,
                         )
                     }
-                }
-                if (grade == FortuneGrade.DAI_XIONG) {
-                    drawCircle(
-                        color = Color.Black.copy(alpha = 0.24f * breathe),
-                        radius = minDim * 0.38f,
-                        center = center,
-                    )
                 }
             }
         }
 
-        val extremeJitter = if (grade == FortuneGrade.DAI_XIONG) sin(pulse * PI * 10).toFloat() * 1.8f else 0f
+        val jitter = if (grade == FortuneGrade.DAI_XIONG) {
+            sin(phase * PI * 12).toFloat() * 1.6f
+        } else {
+            0f
+        }
         Text(
             text = grade.label,
             modifier = Modifier.graphicsLayer {
-                translationX = extremeJitter
-                scaleX = if (grade == FortuneGrade.DAI_JI) 0.97f + 0.05f * breathe else 1f
-                scaleY = if (grade == FortuneGrade.DAI_JI) 0.97f + 0.05f * breathe else 1f
+                translationX = jitter
+                if (grade == FortuneGrade.DAI_JI) {
+                    scaleX = 0.97f + 0.05f * breathe
+                    scaleY = 0.97f + 0.05f * breathe
+                }
             },
             color = visual.text,
             fontFamily = KaiFont,
-            fontSize = if (large) 44.sp else 22.sp,
-            fontWeight = FontWeight.Bold,
-            letterSpacing = if (large) 3.sp else 1.sp,
+            fontSize = if (large) 48.sp else 25.sp,
+            fontWeight = FontWeight.Normal,
+            letterSpacing = if (large) 1.5.sp else 0.5.sp,
             style = TextStyle(
                 shadow = Shadow(
-                    color = if (visual.positive) Color(0xFF4C2A00).copy(alpha = 0.42f) else Color.Black.copy(alpha = 0.38f),
+                    color = if (visual.positive) {
+                        Color(0xFF7B4A08).copy(alpha = 0.28f)
+                    } else {
+                        Color.Black.copy(alpha = 0.34f)
+                    },
                     offset = Offset(0f, if (large) 2f else 1f),
-                    blurRadius = if (large) 3f else 1.5f,
+                    blurRadius = if (large) 2.5f else 1.2f,
                 ),
             ),
         )
