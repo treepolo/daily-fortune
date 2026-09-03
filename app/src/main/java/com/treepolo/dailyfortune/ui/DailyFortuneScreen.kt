@@ -77,6 +77,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
 import com.treepolo.dailyfortune.R
 import com.treepolo.dailyfortune.model.FortuneDomain
 import com.treepolo.dailyfortune.model.FortuneDraw
@@ -88,11 +89,7 @@ import kotlin.math.cos
 import kotlin.math.sin
 
 private val BackgroundInk = Color(0xFFB78059)
-private val BackgroundRaised = Color(0xFF916047)
-private val TempleSilhouette = Color(0xFF8E392C)
-private val TempleSilhouetteDark = Color(0xFF5C2922)
-private val TempleWall = Color(0xFFD8B28A)
-private val Foliage = Color(0xFF6E7751)
+private val BackgroundRaised = Color(0xFF9E6A50)
 private val LacquerRed = Color(0xFF8E2018)
 private val LacquerRedDark = Color(0xFF5A120E)
 private val LacquerRedSide = Color(0xFF6D1712)
@@ -122,6 +119,12 @@ private enum class RitualStage {
     SUSPENSE,
     PAPER,
 }
+
+private data class SlipPose(
+    val x: Int,
+    val y: Int,
+    val rotation: Float,
+)
 
 @Composable
 fun DailyFortuneRoot(viewModel: FortuneViewModel) {
@@ -278,71 +281,20 @@ private fun DistantTempleBackdrop() {
             .background(BackgroundInk),
     ) {
         Canvas(modifier = Modifier.fillMaxSize()) {
-            val w = size.width
-            val h = size.height
+            val horizon = size.height * 0.47f
 
-            // Warm courtyard atmosphere: no frame, no ominous emblem, no decorative gradient.
-            drawCircle(
-                color = GoldBright.copy(alpha = 0.20f),
-                radius = w * 0.13f,
-                center = Offset(w * 0.78f, h * 0.15f),
-            )
-
-            // Soft distant foliage keeps the temple in the background instead of reading as a symbol.
-            drawCircle(
-                color = Foliage.copy(alpha = 0.20f),
-                radius = w * 0.12f,
-                center = Offset(w * 0.17f, h * 0.32f),
-            )
-            drawCircle(
-                color = Foliage.copy(alpha = 0.15f),
-                radius = w * 0.09f,
-                center = Offset(w * 0.84f, h * 0.34f),
-            )
-
-            val roofY = h * 0.29f
-            val roof = Path().apply {
-                moveTo(w * 0.33f, roofY)
-                lineTo(w * 0.40f, h * 0.268f)
-                lineTo(w * 0.46f, h * 0.273f)
-                lineTo(w * 0.50f, h * 0.252f)
-                lineTo(w * 0.54f, h * 0.273f)
-                lineTo(w * 0.60f, h * 0.268f)
-                lineTo(w * 0.67f, roofY)
-                lineTo(w * 0.61f, h * 0.302f)
-                lineTo(w * 0.39f, h * 0.302f)
-                close()
-            }
-            drawPath(roof, TempleSilhouette.copy(alpha = 0.55f))
+            // Intentionally plain. Device review showed that symbolic circles, foliage blobs,
+            // and the tiny temple silhouette read as meaningless or ominous decoration.
             drawRect(
-                color = TempleWall.copy(alpha = 0.42f),
-                topLeft = Offset(w * 0.39f, h * 0.302f),
-                size = Size(w * 0.22f, h * 0.080f),
-            )
-            repeat(4) { index ->
-                val x = w * (0.415f + index * 0.056f)
-                drawRect(
-                    color = TempleSilhouetteDark.copy(alpha = 0.44f),
-                    topLeft = Offset(x, h * 0.305f),
-                    size = Size(w * 0.012f, h * 0.073f),
-                )
-            }
-            drawRect(
-                color = GoldBright.copy(alpha = 0.30f),
-                topLeft = Offset(w * 0.487f, h * 0.322f),
-                size = Size(w * 0.026f, h * 0.048f),
-            )
-
-            drawRect(
-                color = BackgroundRaised.copy(alpha = 0.80f),
-                topLeft = Offset(0f, h * 0.47f),
-                size = Size(w, h * 0.53f),
+                color = BackgroundRaised.copy(alpha = 0.68f),
+                topLeft = Offset(0f, horizon),
+                size = Size(size.width, size.height - horizon),
             )
             drawLine(
-                color = PaperBase.copy(alpha = 0.10f),
-                start = Offset(0f, h * 0.47f),
-                end = Offset(w, h * 0.47f),
-                strokeWidth = 2f,
+                color = PaperBase.copy(alpha = 0.08f),
+                start = Offset(0f, horizon),
+                end = Offset(size.width, horizon),
+                strokeWidth = 1.5f,
             )
         }
     }
@@ -407,7 +359,7 @@ private fun DrawStage(
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Text(
-                text = "按住發光的卷籤，往上抽出",
+                text = "任選一支卷籤，往上抽出",
                 color = GoldBright,
                 fontFamily = KaiFont,
                 fontSize = 19.sp,
@@ -460,63 +412,70 @@ private fun RolledPaperSlip(modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun SelectedSlipHalo(
+private fun SlipSpotlight(
+    active: Boolean,
     dragProgress: Float,
     modifier: Modifier = Modifier,
 ) {
-    val transition = rememberInfiniteTransition(label = "selected-slip-halo")
+    val transition = rememberInfiniteTransition(label = "slip-spotlight")
     val breathe by transition.animateFloat(
-        initialValue = 0.68f,
+        initialValue = 0.72f,
         targetValue = 1f,
         animationSpec = infiniteRepeatable(
-            tween(720, easing = FastOutSlowInEasing),
+            tween(700, easing = FastOutSlowInEasing),
             repeatMode = RepeatMode.Reverse,
         ),
-        label = "selected-slip-halo-breathe",
+        label = "slip-spotlight-breathe",
     )
-    Canvas(modifier = modifier.size(width = 104.dp, height = 220.dp)) {
-        val center = Offset(size.width / 2f, size.height * 0.44f)
-        val fade = 1f - dragProgress * 0.35f
-        drawCircle(
-            color = GoldBright.copy(alpha = 0.12f * breathe * fade),
-            radius = size.width * 0.42f,
-            center = center,
-        )
-        drawCircle(
-            color = GoldLine.copy(alpha = 0.24f * breathe * fade),
-            radius = size.width * 0.30f,
-            center = center,
-            style = Stroke(2.2f),
-        )
-        repeat(14) { index ->
-            val angle = 2.0 * PI * index / 14.0
-            val inner = size.width * 0.28f
-            val outer = size.width * (0.43f + if (index % 2 == 0) 0.08f else 0.02f)
+    Canvas(modifier = modifier.size(width = 92.dp, height = 96.dp)) {
+        val source = Offset(size.width / 2f, size.height * 0.94f)
+        val strength = (if (active) 1f else 0.72f) * breathe * (1f - dragProgress * 0.20f)
+
+        val outerBeam = Path().apply {
+            moveTo(size.width * 0.08f, 0f)
+            lineTo(size.width * 0.92f, 0f)
+            lineTo(source.x + 7f, source.y)
+            lineTo(source.x - 7f, source.y)
+            close()
+        }
+        drawPath(outerBeam, GoldBright.copy(alpha = 0.055f * strength))
+
+        val innerBeam = Path().apply {
+            moveTo(size.width * 0.28f, 0f)
+            lineTo(size.width * 0.72f, 0f)
+            lineTo(source.x + 4f, source.y)
+            lineTo(source.x - 4f, source.y)
+            close()
+        }
+        drawPath(innerBeam, AmberHighlight.copy(alpha = 0.11f * strength))
+
+        val rayXs = listOf(0.10f, 0.24f, 0.38f, 0.62f, 0.76f, 0.90f)
+        rayXs.forEachIndexed { index, fraction ->
             drawLine(
-                color = GoldBright.copy(alpha = (0.16f + 0.12f * breathe) * fade),
-                start = Offset(
-                    center.x + cos(angle).toFloat() * inner,
-                    center.y + sin(angle).toFloat() * inner,
-                ),
+                color = GoldBright.copy(alpha = (0.20f + if (index % 2 == 0) 0.08f else 0f) * strength),
+                start = Offset(size.width * fraction, 4f),
                 end = Offset(
-                    center.x + cos(angle).toFloat() * outer,
-                    center.y + sin(angle).toFloat() * outer,
+                    source.x + (fraction - 0.5f) * 12f,
+                    source.y - 9f,
                 ),
                 strokeWidth = if (index % 2 == 0) 2.0f else 1.1f,
                 cap = StrokeCap.Round,
             )
         }
-        repeat(5) { index ->
-            val y = center.y - size.height * (0.18f + index * 0.055f)
-            val half = 9f + index * 2f
-            drawLine(
-                color = AmberHighlight.copy(alpha = (0.18f + 0.08f * breathe) * fade),
-                start = Offset(center.x - half, y),
-                end = Offset(center.x + half, y),
-                strokeWidth = 1.4f,
-                cap = StrokeCap.Round,
-            )
-        }
+        drawLine(
+            color = AmberHighlight.copy(alpha = 0.70f * strength),
+            start = Offset(source.x - 11f, source.y - 4f),
+            end = Offset(source.x + 11f, source.y - 4f),
+            strokeWidth = 2.0f,
+            cap = StrokeCap.Round,
+        )
+        drawLine(
+            color = AmberHighlight.copy(alpha = 0.70f * strength),
+            start = Offset(source.x, source.y - 15f),
+            end = Offset(source.x, source.y + 7f),
+            strokeWidth = 2.0f,
+            cap = StrokeCap.Round,
+        )
     }
 }
 
@@ -527,74 +486,115 @@ private fun InteractiveFortuneTube(
 ) {
     val haptics = LocalHapticFeedback.current
     val scope = rememberCoroutineScope()
+    var activeIndex by remember { mutableStateOf<Int?>(null) }
     var dragProgress by remember { mutableFloatStateOf(0f) }
     var committed by remember { mutableStateOf(false) }
+
+    val poses = remember {
+        listOf(
+            SlipPose(-74, 54, -9f),
+            SlipPose(-57, 34, -6f),
+            SlipPose(-39, 46, -3f),
+            SlipPose(-20, 27, -1.5f),
+            SlipPose(0, 7, 0f),
+            SlipPose(21, 30, 1.5f),
+            SlipPose(42, 43, 4f),
+            SlipPose(61, 31, 6f),
+            SlipPose(77, 52, 9f),
+        )
+    }
+    val suggestedIndex = 4
+    val focusIndex = activeIndex ?: suggestedIndex
+    val focusPose = poses[focusIndex]
+    val focusLift = if (activeIndex != null) 16f + 150f * dragProgress else 0f
 
     Box(
         modifier = Modifier.size(width = 228.dp, height = 360.dp),
         contentAlignment = Alignment.TopCenter,
     ) {
-        val rearPoses = listOf(
-            Triple(-70, 43, -8f),
-            Triple(-50, 28, -4f),
-            Triple(-29, 48, 3f),
-            Triple(-12, 34, -2f),
-            Triple(18, 45, 2f),
-            Triple(37, 30, -3f),
-            Triple(57, 47, 5f),
-            Triple(72, 36, 8f),
-        )
-        rearPoses.forEach { (x, y, rotation) ->
-            RolledPaperSlip(
-                modifier = Modifier
-                    .offset(x = x.dp, y = y.dp)
-                    .graphicsLayer { rotationZ = rotation },
-            )
-        }
-
-        SelectedSlipHalo(
+        SlipSpotlight(
+            active = activeIndex != null,
             dragProgress = dragProgress,
-            modifier = Modifier.offset(y = (8f - 150f * dragProgress).dp),
+            modifier = Modifier
+                .offset(
+                    x = focusPose.x.dp,
+                    y = (focusPose.y - 92f - focusLift).dp,
+                )
+                .zIndex(0f),
         )
 
-        // The selected roll is exactly the same object as all other rolls.
-        Box(
-            modifier = Modifier
-                .offset(y = (20f - 150f * dragProgress).dp)
-                .size(width = 54.dp, height = 236.dp)
-                .pointerInput(enabled) {
-                    if (!enabled) return@pointerInput
-                    detectDragGestures(
-                        onDragStart = { committed = false },
-                        onDragEnd = {
-                            if (dragProgress >= STICK_COMMIT_THRESHOLD && !committed) {
-                                committed = true
-                                dragProgress = 1f
-                                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                                scope.launch {
-                                    delay(190L)
-                                    onStickCommitted()
+        poses.forEachIndexed { index, pose ->
+            val isActive = activeIndex == index
+            val lift = if (isActive) 16f + 150f * dragProgress else 0f
+            val currentRotation = if (isActive) {
+                pose.rotation * (1f - dragProgress * 0.78f)
+            } else {
+                pose.rotation
+            }
+
+            Box(
+                modifier = Modifier
+                    .offset(x = pose.x.dp, y = (pose.y - lift).dp)
+                    .size(width = 42.dp, height = 236.dp)
+                    .graphicsLayer { rotationZ = currentRotation }
+                    .zIndex(if (isActive) 2f else 1f),
+                contentAlignment = Alignment.TopCenter,
+            ) {
+                RolledPaperSlip()
+
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .size(width = 38.dp, height = 122.dp)
+                        .pointerInput(enabled, index) {
+                            if (!enabled) return@pointerInput
+                            detectDragGestures(
+                                onDragStart = {
+                                    if (activeIndex == null || activeIndex == index) {
+                                        activeIndex = index
+                                        dragProgress = 0f
+                                        committed = false
+                                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    }
+                                },
+                                onDragEnd = {
+                                    if (activeIndex == index && dragProgress >= STICK_COMMIT_THRESHOLD && !committed) {
+                                        committed = true
+                                        dragProgress = 1f
+                                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                        scope.launch {
+                                            delay(190L)
+                                            onStickCommitted()
+                                        }
+                                    } else if (!committed && activeIndex == index) {
+                                        dragProgress = 0f
+                                        activeIndex = null
+                                    }
+                                },
+                                onDragCancel = {
+                                    if (!committed && activeIndex == index) {
+                                        dragProgress = 0f
+                                        activeIndex = null
+                                    }
+                                },
+                            ) { change, amount ->
+                                change.consume()
+                                if (!committed && (activeIndex == index || activeIndex == null)) {
+                                    if (activeIndex == null) activeIndex = index
+                                    dragProgress = (dragProgress - amount.y / 190f).coerceIn(0f, 1f)
                                 }
-                            } else if (!committed) {
-                                dragProgress = 0f
                             }
                         },
-                        onDragCancel = { if (!committed) dragProgress = 0f },
-                    ) { change, amount ->
-                        change.consume()
-                        if (!committed) {
-                            dragProgress = (dragProgress - amount.y / 190f).coerceIn(0f, 1f)
-                        }
-                    }
-                },
-            contentAlignment = Alignment.TopCenter,
-        ) {
-            RolledPaperSlip()
+                )
+            }
         }
 
-        // No visible opening. The tube body simply occludes every roll below the rim,
-        // eliminating the inside/outside ambiguity while preserving a tall hexagonal prism.
-        Canvas(modifier = Modifier.fillMaxSize()) {
+        // The opening stays hidden. The front rim is simply the occlusion boundary.
+        Canvas(
+            modifier = Modifier
+                .fillMaxSize()
+                .zIndex(3f),
+        ) {
             val w = size.width
             val h = size.height
             val topY = h * 0.405f
@@ -668,7 +668,8 @@ private fun InteractiveFortuneTube(
             text = "籤",
             modifier = Modifier
                 .align(Alignment.BottomCenter)
-                .padding(bottom = 50.dp),
+                .padding(bottom = 50.dp)
+                .zIndex(4f),
             color = GoldBright,
             fontFamily = KaiFont,
             fontSize = 42.sp,
@@ -1314,7 +1315,6 @@ private fun GradeMark(
         }
 
         if (grade == FortuneGrade.DAI_JI) {
-            // Three flat text layers create an amber/gold bevel without a color gradient.
             Text(
                 text = grade.label,
                 modifier = Modifier
