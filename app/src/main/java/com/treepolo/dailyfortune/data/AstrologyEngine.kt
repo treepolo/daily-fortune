@@ -12,7 +12,6 @@ import com.treepolo.dailyfortune.model.FortuneGrade
 import com.treepolo.dailyfortune.model.ZodiacSign
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
-import kotlin.math.abs
 import kotlin.math.max
 
 /**
@@ -22,7 +21,7 @@ import kotlin.math.max
  * position/motion/aspect recorded in [AstronomyDayData] and an explicit rule below.
  */
 object AstrologyEngine {
-    const val version = "astrology-v1.1.0"
+    const val version = "astrology-v1.2.0"
     private val taipei = ZoneId.of("Asia/Taipei")
     private val timeFormat = DateTimeFormatter.ofPattern("HH:mm")
 
@@ -66,37 +65,31 @@ object AstrologyEngine {
             summary.signFractions.forEach { (sign, fraction) ->
                 val house = houseFor(zodiac, sign)
                 val dignity = dignityMultiplier(summary.body, sign)
-                val houseContributions = FortuneDomain.entries.associateWith { domain ->
-                    bodyValence(summary.body) * affinity(summary.body, domain) *
-                        houseWeight(house, domain) * dignity * fraction * 8.0
-                }
-                addIfMeaningful(
+                add(
                     AstrologyFactor(
                         id = "house:${summary.body.name}:${sign.name}",
                         title = "${summary.body.label}位於第${house}宮",
                         evidence = "${summary.body.label}於今日約 ${(fraction * 100).toInt()}% 時間位於${sign.label}（太陽星座整宮制第${house}宮）",
-                        contributions = houseContributions,
+                        contributions = FortuneDomain.entries.associateWith { domain ->
+                            bodyValence(summary.body) * AstrologyWeightsV12.houseFactorAffinity(summary.body, house, domain) *
+                                dignity * fraction * 8.0
+                        },
                     ),
-                ) { domain ->
-                    AstrologyCalibrationV4.houseFactorMultiplier(summary.body, house, domain)
-                }
+                )
 
                 val relation = signRelation(zodiac, sign)
                 if (relation != null) {
-                    val relationContributions = FortuneDomain.entries.associateWith { domain ->
-                        relation.polarity(summary.body) * affinity(summary.body, domain) *
-                            dignity * fraction * 5.0
-                    }
-                    addIfMeaningful(
+                    add(
                         AstrologyFactor(
                             id = "sun-sign:${summary.body.name}:${sign.name}:${relation.label}",
                             title = "${summary.body.label}與${zodiac.label}形成${relation.label}",
                             evidence = "${summary.body.label}位於${sign.label}，以${zodiac.label}為太陽星座時形成星座級${relation.label}；不假設出生太陽的精確度數",
-                            contributions = relationContributions,
+                            contributions = FortuneDomain.entries.associateWith { domain ->
+                                relation.polarity(summary.body) * AstrologyWeightsV12.bodyFactorAffinity(summary.body, domain) *
+                                    dignity * fraction * 5.0
+                            },
                         ),
-                    ) { domain ->
-                        AstrologyCalibrationV4.bodyMultiplier(summary.body, domain)
-                    }
+                    )
                 }
             }
 
@@ -104,11 +97,7 @@ object AstrologyEngine {
                 val dominantSign = summary.signFractions.maxBy { it.value }.key
                 val house = houseFor(zodiac, dominantSign)
                 val stationBoost = if (summary.directionChanged) 1.35 else 1.0
-                val contributions = FortuneDomain.entries.associateWith { domain ->
-                    -3.0 * retrogradeSensitivity(summary.body) * affinity(summary.body, domain) *
-                        (0.5 + 0.5 * houseWeight(house, domain).coerceIn(0.0, 1.0)) * stationBoost
-                }
-                addIfMeaningful(
+                add(
                     AstrologyFactor(
                         id = "retrograde:${summary.body.name}",
                         title = "${summary.body.label}逆行",
@@ -116,11 +105,12 @@ object AstrologyEngine {
                             append("${summary.body.label}在四個六小時運動區段中約 ${(summary.retrogradeFraction * 100).toInt()}% 呈逆行")
                             if (summary.directionChanged) append("，且當日偵測到運動方向切換")
                         },
-                        contributions = contributions,
+                        contributions = FortuneDomain.entries.associateWith { domain ->
+                            -3.0 * retrogradeSensitivity(summary.body) * AstrologyWeightsV12.bodyFactorAffinity(summary.body, domain) *
+                                (0.5 + 0.5 * AstrologyWeightsV12.houseRelevance(house, domain).coerceIn(0.0, 1.0)) * stationBoost
+                        },
                     ),
-                ) { domain ->
-                    AstrologyCalibrationV4.bodyMultiplier(summary.body, domain)
-                }
+                )
             }
         }
 
@@ -134,36 +124,18 @@ object AstrologyEngine {
             val strength = (1.0 - hit.orbDegrees / hit.aspect.maxOrb).coerceIn(0.0, 1.0)
             val dignity = (dignityMultiplier(hit.first, signA) + dignityMultiplier(hit.second, signB)) / 2.0
             val polarity = hit.aspect.basePolarity ?: (bodyValence(hit.first) + bodyValence(hit.second)).coerceIn(-1.0, 1.0)
-            val contributions = FortuneDomain.entries.associateWith { domain ->
-                val affinity = (affinity(hit.first, domain) + affinity(hit.second, domain)) / 2.0
-                val houseRelevance = 0.6 + 0.4 * max(
-                    houseWeight(houseA, domain),
-                    houseWeight(houseB, domain),
-                ).coerceIn(0.0, 1.0)
-                polarity * hit.aspect.importance * strength * affinity * houseRelevance * dignity * 10.0
-            }
-            addIfMeaningful(
+            add(
                 AstrologyFactor(
                     id = "aspect:${hit.first.name}:${hit.second.name}:${hit.aspect.name}",
                     title = "${hit.first.label}與${hit.second.label}${hit.aspect.label}",
                     evidence = "最近於 ${hit.closestTime.atZone(taipei).format(timeFormat)}，與${hit.aspect.angle.toInt()}°相差 ${formatOrb(hit.orbDegrees)}°；分別落第${houseA}、${houseB}宮",
-                    contributions = contributions,
-                ),
-            ) { domain ->
-                AstrologyCalibrationV4.aspectFactorMultiplier(hit.first, hit.second, hit.aspect, domain)
-            }
-        }
-    }
-
-    private fun MutableList<AstrologyFactor>.addIfMeaningful(
-        factor: AstrologyFactor,
-        multiplier: (FortuneDomain) -> Double = { 1.0 },
-    ) {
-        if (factor.contributions.values.any { abs(it) >= 0.01 }) {
-            add(
-                factor.copy(
-                    contributions = factor.contributions.mapValues { (domain, value) ->
-                        value * multiplier(domain)
+                    contributions = FortuneDomain.entries.associateWith { domain ->
+                        val directAffinity = AstrologyWeightsV12.aspectFactorAffinity(hit.first, hit.second, hit.aspect, domain)
+                        val relevance = 0.6 + 0.4 * max(
+                            AstrologyWeightsV12.houseRelevance(houseA, domain),
+                            AstrologyWeightsV12.houseRelevance(houseB, domain),
+                        ).coerceIn(0.0, 1.0)
+                        polarity * hit.aspect.importance * strength * directAffinity * relevance * dignity * 10.0
                     },
                 ),
             )
@@ -171,10 +143,10 @@ object AstrologyEngine {
     }
 
     fun grade(score: Double): FortuneGrade =
-        gradeWithThresholds(score, AstrologyCalibrationV4.overallGradeThresholds)
+        gradeWithThresholds(score, AstrologyWeightsV12.overallGradeThresholds)
 
     private fun grade(score: Double, domain: FortuneDomain): FortuneGrade =
-        gradeWithThresholds(score, AstrologyCalibrationV4.domainGradeThresholds.getValue(domain))
+        gradeWithThresholds(score, AstrologyWeightsV12.domainGradeThresholds.getValue(domain))
 
     private fun gradeWithThresholds(score: Double, thresholds: DoubleArray): FortuneGrade = when {
         score >= thresholds[5] -> FortuneGrade.DAI_JI
@@ -251,60 +223,6 @@ object AstrologyEngine {
         AstroBody.JUPITER -> 0.85
         AstroBody.SATURN -> -0.55
         AstroBody.URANUS, AstroBody.NEPTUNE, AstroBody.PLUTO -> 0.00
-    }
-
-    private fun affinity(body: AstroBody, domain: FortuneDomain): Double = bodyAffinities.getValue(body).getValue(domain)
-
-    private val bodyAffinities = mapOf(
-        AstroBody.SUN to affinities(.25, .20, .75, .25, .85),
-        AstroBody.MOON to affinities(.20, .70, .20, .80, .75),
-        AstroBody.MERCURY to affinities(.55, .35, 1.00, .70, .20),
-        AstroBody.VENUS to affinities(.55, 1.00, .25, .95, .30),
-        AstroBody.MARS to affinities(.35, .65, .85, .55, .85),
-        AstroBody.JUPITER to affinities(.95, .45, .80, .60, .50),
-        AstroBody.SATURN to affinities(.75, .35, .90, .45, .70),
-        AstroBody.URANUS to affinities(.45, .45, .55, .55, .35),
-        AstroBody.NEPTUNE to affinities(.35, .65, .45, .55, .50),
-        AstroBody.PLUTO to affinities(.50, .55, .55, .55, .45),
-    )
-
-    private fun affinities(w: Double, l: Double, work: Double, r: Double, h: Double) = mapOf(
-        FortuneDomain.WEALTH to w,
-        FortuneDomain.LOVE to l,
-        FortuneDomain.WORK_STUDY to work,
-        FortuneDomain.RELATIONSHIPS to r,
-        FortuneDomain.HEALTH to h,
-    )
-
-    internal fun houseWeight(house: Int, domain: FortuneDomain): Double = when (house) {
-        1 -> weights(domain, work = .25, relationships = .20, health = 1.00)
-        2 -> weights(domain, wealth = 1.00)
-        3 -> weights(domain, work = .90, relationships = .50)
-        4 -> weights(domain, love = .45, relationships = .55, health = .35)
-        5 -> weights(domain, love = 1.00, work = .35, relationships = .25)
-        6 -> weights(domain, work = .85, health = 1.00)
-        7 -> weights(domain, wealth = .25, love = 1.00, relationships = 1.00)
-        8 -> weights(domain, wealth = .75, love = .45, health = .35)
-        9 -> weights(domain, work = .85, relationships = .25)
-        10 -> weights(domain, wealth = .40, work = 1.00, relationships = .20)
-        11 -> weights(domain, wealth = .35, love = .25, work = .35, relationships = 1.00)
-        12 -> weights(domain, love = .25, work = .20, relationships = .25, health = .60)
-        else -> 0.0
-    }
-
-    private fun weights(
-        domain: FortuneDomain,
-        wealth: Double = 0.0,
-        love: Double = 0.0,
-        work: Double = 0.0,
-        relationships: Double = 0.0,
-        health: Double = 0.0,
-    ): Double = when (domain) {
-        FortuneDomain.WEALTH -> wealth
-        FortuneDomain.LOVE -> love
-        FortuneDomain.WORK_STUDY -> work
-        FortuneDomain.RELATIONSHIPS -> relationships
-        FortuneDomain.HEALTH -> health
     }
 
     private fun retrogradeSensitivity(body: AstroBody): Double = when (body) {
