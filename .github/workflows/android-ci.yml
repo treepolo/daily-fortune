@@ -30,8 +30,10 @@ jobs:
       - name: Install Android SDK 36
         run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
       - uses: gradle/actions/setup-gradle@v4
-      - name: Unit tests and release build
-        run: ./gradlew :app:testDebugUnitTest :app:assembleRelease --stacktrace
+      - name: Unit tests
+        run: ./gradlew :app:testDebugUnitTest --stacktrace
+      - name: Build signed release APK
+        run: ./gradlew :app:assembleRelease --stacktrace
       - name: Verify Kotlin and Deno Astrology Engine parity
         run: deno run --allow-read supabase/functions/_shared/check_kotlin_parity.ts app/build/astrology-kotlin-fixture.json
       - name: Upload release APK
