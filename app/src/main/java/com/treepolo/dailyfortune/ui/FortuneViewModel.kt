@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.treepolo.dailyfortune.data.AstronomyEphemeris
+import com.treepolo.dailyfortune.data.FortuneRepositorySnapshot
 import com.treepolo.dailyfortune.data.LocalFortuneRepository
 import com.treepolo.dailyfortune.model.DestinyChange
 import com.treepolo.dailyfortune.model.FortuneStats
@@ -44,11 +45,14 @@ class FortuneViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch {
             val today = todayTaipei()
             _uiState.value = _uiState.value.copy(isLoading = true, errorMessage = null)
-            runCatching {
+            val result = runCatching {
                 withContext(Dispatchers.IO) { repository.selectZodiac(today, zodiac) }
-            }.onSuccess {
+            }
+            if (result.isSuccess) {
                 refresh(today)
-            }.onFailure(::showError)
+            } else {
+                restoreLocalState(today, requireNotNull(result.exceptionOrNull()))
+            }
         }
     }
 
@@ -56,33 +60,56 @@ class FortuneViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch {
             val today = todayTaipei()
             _uiState.value = _uiState.value.copy(isLoading = true, errorMessage = null)
-            runCatching {
+            val result = runCatching {
                 withContext(Dispatchers.IO) { repository.reroll(today) }
-            }.onSuccess {
+            }
+            if (result.isSuccess) {
                 refresh(today)
-            }.onFailure(::showError)
+            } else {
+                restoreLocalState(today, requireNotNull(result.exceptionOrNull()))
+            }
         }
     }
 
     private suspend fun refresh(date: LocalDate) {
         _uiState.value = _uiState.value.copy(isLoading = true, errorMessage = null)
-        runCatching {
+        val result = runCatching {
             withContext(Dispatchers.IO) {
                 repository.markTodaySeen(date)
                 repository.snapshot(date)
             }
-        }.onSuccess { snapshot ->
-            _uiState.value = FortuneUiState(
-                selectedZodiac = snapshot.selectedZodiac,
-                publicDestinies = snapshot.publicDestinies,
-                currentDestiny = snapshot.currentDestiny,
-                destinyChange = snapshot.destinyChange,
-                hasDefiedFate = snapshot.currentDestiny?.parallelSky != null,
-                todayRerollCount = snapshot.todayRerollCount,
-                stats = snapshot.stats,
-                isLoading = false,
-            )
-        }.onFailure(::showError)
+        }
+        val snapshot = result.getOrNull()
+        if (snapshot != null) {
+            render(snapshot)
+        } else {
+            restoreLocalState(date, requireNotNull(result.exceptionOrNull()))
+        }
+    }
+
+    private suspend fun restoreLocalState(date: LocalDate, error: Throwable) {
+        val local = runCatching {
+            withContext(Dispatchers.IO) { repository.localSnapshot(date) }
+        }.getOrNull()
+        if (local != null) {
+            render(local, error.message ?: "暫時無法取得今日天命。")
+        } else {
+            showError(error)
+        }
+    }
+
+    private fun render(snapshot: FortuneRepositorySnapshot, errorMessage: String? = null) {
+        _uiState.value = FortuneUiState(
+            selectedZodiac = snapshot.selectedZodiac,
+            publicDestinies = snapshot.publicDestinies,
+            currentDestiny = snapshot.currentDestiny,
+            destinyChange = snapshot.destinyChange,
+            hasDefiedFate = snapshot.currentDestiny?.parallelSky != null,
+            todayRerollCount = snapshot.todayRerollCount,
+            stats = snapshot.stats,
+            isLoading = false,
+            errorMessage = errorMessage,
+        )
     }
 
     private fun showError(error: Throwable) {
