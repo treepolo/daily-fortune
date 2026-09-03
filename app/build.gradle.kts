@@ -13,14 +13,14 @@ android {
         minSdk = 26
         targetSdk = 36
         // CI builds use the monotonically increasing GitHub Actions run number so
-        // every distributed debug APK can upgrade the previous one in place.
+        // every distributed APK can upgrade the previous one in place.
         // Local builds fall back to 2 until release versioning is introduced.
         versionCode = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 2
         versionName = "0.3.0"
     }
 
     signingConfigs {
-        create("stableDebug") {
+        create("stableApp") {
             storeFile = rootProject.file("debug.keystore")
             storePassword = "android"
             keyAlias = "androiddebugkey"
@@ -30,9 +30,10 @@ android {
 
     buildTypes {
         debug {
-            signingConfig = signingConfigs.getByName("stableDebug")
+            signingConfig = signingConfigs.getByName("stableApp")
         }
         release {
+            signingConfig = signingConfigs.getByName("stableApp")
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
