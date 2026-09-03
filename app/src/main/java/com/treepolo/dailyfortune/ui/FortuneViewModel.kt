@@ -24,7 +24,6 @@ class FortuneViewModel(application: Application) : AndroidViewModel(application)
     init {
         viewModelScope.launch {
             var lastDate = today()
-            refresh(lastDate)
             while (isActive) {
                 delay(60_000L)
                 val currentDate = today()
@@ -38,6 +37,8 @@ class FortuneViewModel(application: Application) : AndroidViewModel(application)
 
     fun onForeground() {
         viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(isLoading = true, errorMessage = null)
+            // startSession resolves/caches the current experiment treatment before interaction.
             runCatching { withContext(Dispatchers.IO) { repository.startSession() } }
             refresh(today())
         }
