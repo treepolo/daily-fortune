@@ -1,10 +1,10 @@
 # Local data architecture
 
-The Android client now treats Room/SQLite as the durable local source of truth for fate data and history.
+The Android client treats Room/SQLite as the durable local source of truth for fate data and history.
 
 ## Ownership
 
-DataStore (`fortune_state`) keeps only small user settings. The existing `selected_zodiac` key is preserved across the Room rollout. Pre-Room daily fate, reroll counters, aggregate statistics, parallel-sky pointer, and retired ancient-fortune keys are cleared once because those aggregates cannot be losslessly converted into event history and are development-only data.
+DataStore (`fortune_state`) keeps small user settings and retained pre-Room aggregate counters. The existing `selected_zodiac` key is preserved across the Room rollout. Legacy values are retained rather than deleted so an upgrade can still recover user-visible aggregate statistics if Room history is empty or temporarily unavailable.
 
 Room database: `daily-fortune.db`.
 
@@ -20,17 +20,13 @@ Tables:
 
 ## Authority and offline rules
 
-`DestinyAuthority` separates local persistence from the source of authoritative data.
+`DestinyAuthority` separates local persistence from the source of destiny data.
 
-Debug builds currently use `EmbeddedDevelopmentDestinyAuthority` so the existing APK remains testable before Supabase deployment. It calculates real astronomy locally and is explicitly marked `DEVELOPMENT_EMBEDDED` / `LOCAL_DEVELOPMENT` in Room.
+The currently distributed sideload APK, for both debug and release build types, uses `EmbeddedDevelopmentDestinyAuthority` until the Supabase client is actually wired into Android. It calculates the real astronomy locally with the same app astrology engine and stores provenance explicitly as `DEVELOPMENT_EMBEDDED` / `LOCAL_DEVELOPMENT`. These rows are never labeled as centrally synchronized results.
 
-Release builds do not use that source. Until Supabase is connected, `UnavailableDestinyAuthority` behaves as follows:
+`UnavailableDestinyAuthority` remains reserved for a future central-only mode. It must not be selected merely because the APK is a release build; doing so would make an otherwise functional sideload release unable to generate the current day when no central cache exists.
 
-- cached central public destiny exists: load it from Room and continue offline;
-- no cache: report unavailable;
-- reroll without central service: report unavailable.
-
-There is therefore no production seed or local-calculation fallback masquerading as a central public result.
+If an authority request fails in the future, the UI first restores the locally persisted zodiac, statistics, cached public destiny, and current personal destiny where available, then surfaces the error. A transport failure must not make persisted data appear reset.
 
 ## Multiple rerolls
 
@@ -42,11 +38,13 @@ It is not always compared with the original public destiny.
 
 ## Statistics
 
-Statistics are derived from immutable Room events rather than mutable DataStore counters:
+Room statistics are derived from immutable events:
 
 - one `PUBLIC_VIEW` sample ID per date;
 - one `PERSONAL_REROLL` sample per reroll event;
 - reroll totals and max-per-day from `local_reroll_events`;
 - grade counts/rates from `local_fate_sample_events`.
+
+For upgrade compatibility, any retained pre-Room aggregate statistic is compared with the Room-derived value and the larger value is used for display. This prevents a storage migration from making an existing user's counters go backwards while Room remains the source of detailed event history.
 
 This keeps discarded worldlines in history and makes future cloud reconciliation auditable.
