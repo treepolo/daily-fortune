@@ -109,6 +109,10 @@ class FortuneViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    fun recordAdRuntimeEvent(eventName: String, payload: Map<String, Any?>) {
+        reportAdEvent(eventName, payload)
+    }
+
     private suspend fun evaluateRerollGate(
         currentDraw: FortuneDraw,
         config: AdsConfig,
