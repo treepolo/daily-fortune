@@ -12,6 +12,9 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      DAILY_FORTUNE_CONFIG_URL: https://jwmdidkzqkacwwjzakja.supabase.co/functions/v1/experiment-config
+      DAILY_FORTUNE_ANALYTICS_URL: https://jwmdidkzqkacwwjzakja.supabase.co/functions/v1/analytics-events
     steps:
       - uses: actions/checkout@v4
       - uses: denoland/setup-deno@v2
@@ -22,6 +25,55 @@ jobs:
           deno check supabase/functions/experiment-config/index.ts
           deno check supabase/functions/analytics-events/index.ts
           deno test supabase/functions/_shared/experiment_core_test.ts
+      - name: Smoke test deployed research backend
+        shell: bash
+        run: |
+          set -euo pipefail
+          installation_id="11111111-1111-4111-8111-111111111111"
+          curl --fail --silent --show-error \
+            "${DAILY_FORTUNE_CONFIG_URL}?installation_id=${installation_id}&app_version=ci&timezone=UTC" \
+            -o /tmp/daily-fortune-config.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          data = json.loads(Path('/tmp/daily-fortune-config.json').read_text())
+          assert data['config_id'].startswith('resolved-')
+          assert data['fortune']['sampling']['mode'] == 'INDEPENDENT'
+          assert len(data['fortune']['initial_distribution']['probabilities']) == 7
+          assert len(data['fortune']['reroll_distribution']['probabilities']) == 7
+          PY
+
+          event_id="$(cat /proc/sys/kernel/random/uuid)"
+          now_ms="$(( $(date +%s) * 1000 ))"
+          EVENT_ID="$event_id" NOW_MS="$now_ms" python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          event = {
+              'event_id': os.environ['EVENT_ID'],
+              'installation_id': '11111111-1111-4111-8111-111111111111',
+              'session_id': 'github-actions-smoke',
+              'event_name': 'ci_backend_smoke',
+              'event_epoch_millis': int(os.environ['NOW_MS']),
+              'local_datetime': '2026-01-01T00:00:00',
+              'timezone_id': 'UTC',
+              'app_version': 'ci',
+              'config_id': 'ci-smoke',
+              'assignments': [],
+              'payload': {'github_run_id': '${{ github.run_id }}'},
+          }
+          Path('/tmp/daily-fortune-events.json').write_text(json.dumps({'events': [event]}))
+          PY
+          curl --fail --silent --show-error \
+            -H 'Content-Type: application/json' \
+            --data-binary @/tmp/daily-fortune-events.json \
+            "$DAILY_FORTUNE_ANALYTICS_URL" \
+            -o /tmp/daily-fortune-analytics.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          data = json.loads(Path('/tmp/daily-fortune-analytics.json').read_text())
+          assert data.get('accepted') == 1
+          PY
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
@@ -33,9 +85,6 @@ jobs:
       - name: Unit tests
         run: ./gradlew :app:testDebugUnitTest --stacktrace
       - name: Build signed release APK
-        env:
-          DAILY_FORTUNE_CONFIG_URL: ${{ secrets.DAILY_FORTUNE_CONFIG_URL }}
-          DAILY_FORTUNE_ANALYTICS_URL: ${{ secrets.DAILY_FORTUNE_ANALYTICS_URL }}
         run: ./gradlew :app:assembleRelease --stacktrace
       - name: Upload release APK
         if: github.event_name == 'push'
