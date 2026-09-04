@@ -68,19 +68,29 @@ class FortuneViewModel(application: Application) : AndroidViewModel(application)
         performDraw { date -> repository.initialDraw(date) }
     }
 
-    fun defyFate() {
+    /**
+     * Called when the user presses the visible 「逆天改命!!」 button. The ad gate belongs here:
+     * reward/bypass first, then the UI is allowed to return to the fortune tube. No new fortune is
+     * generated until the user subsequently pulls a slip past the normal commit threshold.
+     */
+    fun requestDefyFate() {
+        if (_uiState.value.rerollGateInProgress) return
         viewModelScope.launch {
-            val currentDraw = _uiState.value.currentDraw
-                ?: return@launch
-            _uiState.value = _uiState.value.copy(isLoading = true, errorMessage = null)
+            val currentDraw = _uiState.value.currentDraw ?: return@launch
+            _uiState.value = _uiState.value.copy(
+                errorMessage = null,
+                rerollGateInProgress = true,
+                rerollUnlocked = false,
+            )
 
             val configResult = runCatching {
                 withContext(Dispatchers.IO) { repository.ensureAdsConfigReady() }
             }
             val config = configResult.getOrElse {
                 _uiState.value = _uiState.value.copy(
-                    isLoading = false,
                     errorMessage = "暫時無法確認逆天改命條件，請再試一次。",
+                    rerollGateInProgress = false,
+                    rerollUnlocked = false,
                 )
                 return@launch
             }
@@ -89,8 +99,9 @@ class FortuneViewModel(application: Application) : AndroidViewModel(application)
             val gate = evaluateRerollGate(currentDraw, config)
             if (!gate.allowed) {
                 _uiState.value = _uiState.value.copy(
-                    isLoading = false,
                     errorMessage = "廣告未完成，這次沒有消耗逆天改命。",
+                    rerollGateInProgress = false,
+                    rerollUnlocked = false,
                 )
                 return@launch
             }
@@ -105,8 +116,24 @@ class FortuneViewModel(application: Application) : AndroidViewModel(application)
                     ),
                 )
             }
-            performDrawNow { date -> repository.reroll(date) }
+            _uiState.value = _uiState.value.copy(
+                errorMessage = null,
+                rerollGateInProgress = false,
+                rerollUnlocked = true,
+            )
         }
+    }
+
+    /** Called by the UI once it has consumed the one-shot transition back to the fortune tube. */
+    fun consumeRerollUnlock() {
+        if (_uiState.value.rerollUnlocked) {
+            _uiState.value = _uiState.value.copy(rerollUnlocked = false)
+        }
+    }
+
+    /** Called only after the user has returned to the tube and physically committed a new slip. */
+    fun defyFate() {
+        performDraw { date -> repository.reroll(date) }
     }
 
     fun recordAdRuntimeEvent(eventName: String, payload: Map<String, Any?>) {
@@ -205,6 +232,8 @@ data class FortuneUiState(
     val currentDraw: FortuneDraw? = null,
     val isLoading: Boolean = false,
     val errorMessage: String? = null,
+    val rerollGateInProgress: Boolean = false,
+    val rerollUnlocked: Boolean = false,
 )
 
 private data class RerollGateResult(
