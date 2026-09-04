@@ -15,6 +15,11 @@ jobs:
     env:
       DAILY_FORTUNE_CONFIG_URL: https://jwmdidkzqkacwwjzakja.supabase.co/functions/v1/experiment-config
       DAILY_FORTUNE_ANALYTICS_URL: https://jwmdidkzqkacwwjzakja.supabase.co/functions/v1/analytics-events
+      DAILY_FORTUNE_UPLOAD_KEYSTORE_B64: ${{ secrets.DAILY_FORTUNE_UPLOAD_KEYSTORE_B64 }}
+      DAILY_FORTUNE_RELEASE_STORE_PASSWORD: ${{ secrets.DAILY_FORTUNE_RELEASE_STORE_PASSWORD }}
+      DAILY_FORTUNE_RELEASE_KEY_ALIAS: ${{ secrets.DAILY_FORTUNE_RELEASE_KEY_ALIAS }}
+      DAILY_FORTUNE_RELEASE_KEY_PASSWORD: ${{ secrets.DAILY_FORTUNE_RELEASE_KEY_PASSWORD }}
+      DAILY_FORTUNE_RELEASE_KEYSTORE_PATH: /tmp/daily-fortune-upload.jks
     steps:
       - uses: actions/checkout@v4
       - uses: denoland/setup-deno@v2
@@ -41,6 +46,10 @@ jobs:
           assert data['fortune']['sampling']['mode'] == 'INDEPENDENT'
           assert len(data['fortune']['initial_distribution']['probabilities']) == 7
           assert len(data['fortune']['reroll_distribution']['probabilities']) == 7
+          assert data['ads']['enabled'] is False
+          assert data['ads']['provider'] == 'ADMOB'
+          assert data['ads']['rewarded_unit_id'] == 'ca-app-pub-8284304703726644/9731073792'
+          assert data['ads']['bypass_overall_scores'] == [7]
           PY
 
           event_id="$(cat /proc/sys/kernel/random/uuid)"
@@ -82,15 +91,40 @@ jobs:
       - name: Install Android SDK 36
         run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
       - uses: gradle/actions/setup-gradle@v4
+      - name: Prepare Play upload signing key
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -n "${DAILY_FORTUNE_UPLOAD_KEYSTORE_B64:-}" && \
+                -n "${DAILY_FORTUNE_RELEASE_STORE_PASSWORD:-}" && \
+                -n "${DAILY_FORTUNE_RELEASE_KEY_ALIAS:-}" && \
+                -n "${DAILY_FORTUNE_RELEASE_KEY_PASSWORD:-}" ]]; then
+            printf '%s' "$DAILY_FORTUNE_UPLOAD_KEYSTORE_B64" | base64 --decode > "$DAILY_FORTUNE_RELEASE_KEYSTORE_PATH"
+            chmod 600 "$DAILY_FORTUNE_RELEASE_KEYSTORE_PATH"
+            echo "signed" > /tmp/release-signing.txt
+          else
+            echo "unsigned-needs-github-secrets" > /tmp/release-signing.txt
+            unset DAILY_FORTUNE_RELEASE_STORE_PASSWORD DAILY_FORTUNE_RELEASE_KEY_ALIAS DAILY_FORTUNE_RELEASE_KEY_PASSWORD
+          fi
       - name: Unit tests
         run: ./gradlew :app:testDebugUnitTest --stacktrace
-      - name: Build signed release APK
-        run: ./gradlew :app:assembleRelease --stacktrace
-      - name: Upload release APK
+      - name: Build QA APK and Play AAB
+        run: ./gradlew :app:assembleDebug :app:bundleRelease --stacktrace
+      - name: Upload QA APK
         if: github.event_name == 'push'
         uses: actions/upload-artifact@v4
         with:
-          name: daily-fortune-release
-          path: app/build/outputs/apk/release/app-release.apk
+          name: daily-fortune-qa-apk
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14
+      - name: Upload Play AAB
+        if: github.event_name == 'push'
+        uses: actions/upload-artifact@v4
+        with:
+          name: daily-fortune-play-aab
+          path: |
+            app/build/outputs/bundle/release/app-release.aab
+            /tmp/release-signing.txt
           if-no-files-found: error
           retention-days: 14
