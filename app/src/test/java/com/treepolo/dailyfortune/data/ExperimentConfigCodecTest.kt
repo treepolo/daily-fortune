@@ -25,18 +25,13 @@ class ExperimentConfigCodecTest {
 
     @Test
     fun missingAdsBlockDefaultsToDisabled() {
-        val config = ExperimentConfigCodec.decode(CONFIG_JSON.replace(ADS_BLOCK, ""))
+        val config = ExperimentConfigCodec.decode(CONFIG_WITHOUT_ADS)
         assertFalse(config.ads.enabled)
         assertEquals(setOf(7), config.ads.bypassOverallScores)
     }
 
     companion object {
-        private const val ADS_BLOCK = """,\n          \"ads\": {\n            \"enabled\": false,\n            \"provider\": \"ADMOB\",\n            \"rewarded_unit_id\": \"ca-app-pub-8284304703726644/9731073792\",\n            \"bypass_overall_scores\": [7],\n            \"failure_policy\": \"FAIL_OPEN\",\n            \"preload\": true,\n            \"load_timeout_millis\": 8000\n          }"""
-
-        private const val CONFIG_JSON = """
-        {
-          "config_id": "resolved-test",
-          "assignments": [],
+        private const val FORTUNE_BLOCK = """
           "fortune": {
             "initial_distribution": {
               "id": "uniform-v1",
@@ -54,7 +49,26 @@ class ExperimentConfigCodecTest {
               "id": "floor-v1",
               "type": "FLOOR"
             }
-          },
+          }
+        """
+
+        private const val CONFIG_WITHOUT_ADS = """
+        {
+          "config_id": "resolved-test",
+          "assignments": [],
+          $FORTUNE_BLOCK,
+          "visual": {
+            "static_variant_id": "baseline",
+            "reveal_variant_id": "none"
+          }
+        }
+        """
+
+        private const val CONFIG_JSON = """
+        {
+          "config_id": "resolved-test",
+          "assignments": [],
+          $FORTUNE_BLOCK,
           "visual": {
             "static_variant_id": "baseline",
             "reveal_variant_id": "none"
