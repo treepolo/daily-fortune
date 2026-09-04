@@ -1,5 +1,7 @@
 package com.treepolo.dailyfortune.data
 
+import com.treepolo.dailyfortune.model.AdFailurePolicy
+import com.treepolo.dailyfortune.model.AdsConfig
 import com.treepolo.dailyfortune.model.DynamicProbabilityConfig
 import com.treepolo.dailyfortune.model.ExperimentAssignment
 import com.treepolo.dailyfortune.model.GradeDistribution
@@ -27,6 +29,7 @@ object ExperimentConfigCodec {
         val overallObject = fortune.getJSONObject("overall_rule")
         val dynamicObject = fortune.optJSONObject("dynamic_probability")
         val visualObject = root.optJSONObject("visual")
+        val adsObject = root.optJSONObject("ads")
 
         val config = ResolvedExperimentConfig(
             configId = root.getString("config_id"),
@@ -49,6 +52,7 @@ object ExperimentConfigCodec {
                 revealVariantId = visualObject?.optString("reveal_variant_id", "interactive-paper-v1")
                     ?: "interactive-paper-v1",
             ),
+            ads = parseAds(adsObject),
         )
         require(config.isValid()) { "Remote experiment config failed validation" }
         FortuneConfigValidator.validate(config)
@@ -111,6 +115,26 @@ object ExperimentConfigCodec {
         )
     }
 
+    private fun parseAds(value: JSONObject?): AdsConfig {
+        if (value == null) return AdsConfig(enabled = false)
+        val bypass = value.optJSONArray("bypass_overall_scores")?.let { array ->
+            buildSet {
+                for (index in 0 until array.length()) add(array.getInt(index))
+            }
+        } ?: setOf(7)
+        return AdsConfig(
+            enabled = value.optBoolean("enabled", false),
+            provider = value.optString("provider", "ADMOB"),
+            rewardedUnitId = value.optString("rewarded_unit_id", ""),
+            bypassOverallScores = bypass,
+            failurePolicy = AdFailurePolicy.valueOf(
+                value.optString("failure_policy", AdFailurePolicy.FAIL_OPEN.name),
+            ),
+            preload = value.optBoolean("preload", true),
+            loadTimeoutMillis = value.optLong("load_timeout_millis", 8_000L),
+        )
+    }
+
     private fun parseAssignments(array: JSONArray?): List<ExperimentAssignment> = buildList {
         if (array == null) return@buildList
         for (index in 0 until array.length()) {
@@ -152,6 +176,7 @@ object FortuneConfigValidator {
     fun validate(config: ResolvedExperimentConfig) {
         require(config.initialDistribution.isValid()) { "Invalid initial distribution" }
         require(config.rerollDistribution.isValid()) { "Invalid reroll distribution" }
+        require(config.ads.isValid()) { "Invalid ads config" }
 
         when (config.sampling.mode) {
             SamplingMode.INDEPENDENT -> Unit

@@ -31,7 +31,7 @@ val prepareKaiFont by tasks.registering {
         if (!zipFile.exists() || zipFile.length() < 1_000_000L) {
             val url = URI("https://www.cns11643.gov.tw/opendata/Fonts_Kai.zip").toURL()
             val connection = url.openConnection().apply {
-                setRequestProperty("User-Agent", "daily-fortune-android-build/0.6.8")
+                setRequestProperty("User-Agent", "daily-fortune-android-build/0.6.9")
                 connectTimeout = 20_000
                 readTimeout = 120_000
             }
@@ -57,6 +57,17 @@ val prepareKaiFont by tasks.registering {
     }
 }
 
+val releaseKeystorePath = System.getenv("DAILY_FORTUNE_RELEASE_KEYSTORE_PATH").orEmpty()
+val releaseStorePassword = System.getenv("DAILY_FORTUNE_RELEASE_STORE_PASSWORD").orEmpty()
+val releaseKeyAlias = System.getenv("DAILY_FORTUNE_RELEASE_KEY_ALIAS").orEmpty()
+val releaseKeyPassword = System.getenv("DAILY_FORTUNE_RELEASE_KEY_PASSWORD").orEmpty()
+val canSignRelease = listOf(
+    releaseKeystorePath,
+    releaseStorePassword,
+    releaseKeyAlias,
+    releaseKeyPassword,
+).all { it.isNotBlank() }
+
 android {
     namespace = "com.treepolo.dailyfortune"
     compileSdk = 36
@@ -66,12 +77,12 @@ android {
         minSdk = 26
         targetSdk = 36
         // CI builds use the monotonically increasing GitHub Actions run number so
-        // every distributed APK can upgrade the previous one in place.
+        // every distributed QA APK can upgrade the previous one in place.
         versionCode = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 2
-        versionName = "0.6.8"
+        versionName = "0.6.9"
 
         // Empty values keep the app fully offline with embedded experiment defaults.
-        // Production builds can inject these once; future experiment changes happen remotely.
+        // Production builds inject these once; future experiment and ad-policy changes happen remotely.
         buildConfigField("String", "REMOTE_CONFIG_URL", quotedEnvironment("DAILY_FORTUNE_CONFIG_URL"))
         buildConfigField("String", "ANALYTICS_INGEST_URL", quotedEnvironment("DAILY_FORTUNE_ANALYTICS_URL"))
     }
@@ -79,20 +90,32 @@ android {
     sourceSets.getByName("main").res.srcDir(generatedKaiResDir)
 
     signingConfigs {
-        create("stableApp") {
+        // QA/debug builds keep the historical repository debug key so existing device installs
+        // remain upgradeable during development. It is never used for the Play production bundle.
+        create("stableDebug") {
             storeFile = rootProject.file("debug.keystore")
             storePassword = "android"
             keyAlias = "androiddebugkey"
             keyPassword = "android"
         }
+        if (canSignRelease) {
+            create("releaseUpload") {
+                storeFile = file(releaseKeystorePath)
+                storePassword = releaseStorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+            }
+        }
     }
 
     buildTypes {
         debug {
-            signingConfig = signingConfigs.getByName("stableApp")
+            signingConfig = signingConfigs.getByName("stableDebug")
         }
         release {
-            signingConfig = signingConfigs.getByName("stableApp")
+            if (canSignRelease) {
+                signingConfig = signingConfigs.getByName("releaseUpload")
+            }
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
@@ -136,5 +159,9 @@ dependencies {
     implementation(libs.androidx.compose.material3)
     debugImplementation(libs.androidx.compose.ui.tooling)
 
+    implementation(libs.google.mobile.ads)
+    implementation(libs.google.ump)
+
+    testImplementation(libs.json.jvm)
     testImplementation(libs.junit)
 }
