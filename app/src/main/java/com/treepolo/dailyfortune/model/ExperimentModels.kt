@@ -78,6 +78,27 @@ data class VisualExperimentConfig(
     val revealVariantId: String = "interactive-paper-v1",
 )
 
+enum class AdFailurePolicy {
+    FAIL_OPEN,
+    FAIL_CLOSED,
+}
+
+data class AdsConfig(
+    val enabled: Boolean = false,
+    val provider: String = "ADMOB",
+    val rewardedUnitId: String = "",
+    val bypassOverallScores: Set<Int> = setOf(7),
+    val failurePolicy: AdFailurePolicy = AdFailurePolicy.FAIL_OPEN,
+    val preload: Boolean = true,
+    val loadTimeoutMillis: Long = 8_000L,
+) {
+    fun isValid(): Boolean =
+        provider.isNotBlank() &&
+            (!enabled || rewardedUnitId.isNotBlank()) &&
+            bypassOverallScores.all { it in 1..7 } &&
+            loadTimeoutMillis in 1_000L..60_000L
+}
+
 data class ResolvedExperimentConfig(
     val configId: String,
     val assignments: List<ExperimentAssignment>,
@@ -87,6 +108,7 @@ data class ResolvedExperimentConfig(
     val overallRule: OverallRule,
     val dynamicProbability: DynamicProbabilityConfig = DynamicProbabilityConfig(),
     val visual: VisualExperimentConfig = VisualExperimentConfig(),
+    val ads: AdsConfig = AdsConfig(),
 ) {
     fun isValid(): Boolean =
         configId.isNotBlank() &&
@@ -94,7 +116,8 @@ data class ResolvedExperimentConfig(
             rerollDistribution.isValid() &&
             sampling.profileId.isNotBlank() &&
             overallRule.id.isNotBlank() &&
-            dynamicProbability.policyId.isNotBlank()
+            dynamicProbability.policyId.isNotBlank() &&
+            ads.isValid()
 
     companion object {
         fun embeddedDefault(): ResolvedExperimentConfig {
@@ -117,6 +140,7 @@ data class ResolvedExperimentConfig(
                     rerollSchedule = emptyList(),
                     pity = PityConfig(enabled = false),
                 ),
+                ads = AdsConfig(enabled = false),
             )
         }
     }
