@@ -7,7 +7,12 @@
         android:allowBackup="true"
         android:label="@string/app_name"
         android:supportsRtl="true"
-        android:theme="@style/Theme.DailyFortune">
+        android:theme="@style/Theme.DailyFortune"
+        android:usesCleartextTraffic="false">
+        <meta-data
+            android:name="com.google.android.gms.ads.APPLICATION_ID"
+            android:value="ca-app-pub-8284304703726644~2628433223" />
+
         <activity
             android:name=".MainActivity"
             android:exported="true">
