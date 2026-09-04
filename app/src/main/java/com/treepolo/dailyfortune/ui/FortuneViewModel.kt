@@ -36,17 +36,22 @@ class FortuneViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun onForeground() {
+        // Visual startup depends only on the local Room snapshot. Remote treatment resolution and
+        // analytics backlog upload run in parallel and must never keep the full-screen loader up.
+        _uiState.value = _uiState.value.copy(errorMessage = null)
         viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isLoading = true, errorMessage = null)
-            // startSession resolves/caches the current experiment treatment before interaction.
-            runCatching { withContext(Dispatchers.IO) { repository.startSession() } }
             refresh(today())
+        }
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching { repository.startSession() }
+            runCatching { repository.flushResearchEvents() }
         }
     }
 
     fun onBackground() {
-        viewModelScope.launch {
-            runCatching { withContext(Dispatchers.IO) { repository.endSession() } }
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching { repository.endSession() }
+            runCatching { repository.flushResearchEvents() }
         }
     }
 

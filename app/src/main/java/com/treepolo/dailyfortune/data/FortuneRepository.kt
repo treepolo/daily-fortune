@@ -65,6 +65,11 @@ class LocalFortuneRepository(
         type: DrawType,
         existingState: LocalDailyFortuneStateEntity?,
     ): FortuneDraw {
+        // The UI may already be visible while research session bootstrap happens in parallel.
+        // Before consuming probability/treatment config for a newly generated draw, synchronize
+        // with that bootstrap so the visual startup path stays fast without sacrificing treatment
+        // consistency.
+        research.ensureConfigReadyForDraw()
         val config = research.currentConfig()
         val drawIndex = (existingState?.drawCount ?: 0) + 1
         val rerollIndex = if (type == DrawType.REROLL) existingState?.drawCount ?: 0 else 0

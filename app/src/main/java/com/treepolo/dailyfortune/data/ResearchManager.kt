@@ -30,25 +30,34 @@ class ResearchManager(
             preferences.edit().putString(KEY_INSTALLATION_ID, it).apply()
         }
     private val sessionMutex = Mutex()
+    private val configMutex = Mutex()
     private val uploadMutex = Mutex()
 
     @Volatile private var sessionId: String? = null
+    @Volatile private var sessionConfigReady = false
     @Volatile private var activeConfig: ResolvedExperimentConfig = loadCachedConfig()
 
     fun currentConfig(): ResolvedExperimentConfig = activeConfig
 
     /**
-     * Starts one foreground session. Remote treatment resolution happens before the session
-     * becomes interactive, so first-install users cannot draw with the embedded fallback and
-     * then be assigned to a different experiment treatment moments later.
+     * Starts one foreground research session. Treatment resolution can take network time, so
+     * callers must not put this method on the visual startup critical path. A valid cached
+     * treatment is reused for up to CONFIG_CACHE_TTL_MILLIS; otherwise we resolve remotely
+     * before a draw is allowed to consume the config.
+     *
+     * Event upload is intentionally not performed here. Telemetry backlog must never delay the
+     * app becoming visible or interactive.
      */
     suspend fun startSession() {
         val newSession = sessionMutex.withLock {
             if (sessionId != null) return@withLock null
-            UUID.randomUUID().toString().also { sessionId = it }
+            UUID.randomUUID().toString().also {
+                sessionId = it
+                sessionConfigReady = false
+            }
         } ?: return
 
-        refreshRemoteConfig()
+        ensureConfigReadyForSession()
         val config = activeConfig
         dao.insertAnalyticsEvent(eventEntity("app_open", JSONObject(), config, newSession))
         dao.insertAnalyticsEvent(eventEntity("session_start", JSONObject(), config, newSession))
@@ -60,7 +69,6 @@ class ResearchManager(
                 eventEntity("experiment_exposure", exposurePayload, config, newSession),
             )
         }
-        flushPendingEvents()
     }
 
     suspend fun endSession() {
@@ -70,10 +78,37 @@ class ResearchManager(
             current
         } ?: return
         dao.insertAnalyticsEvent(eventEntity("session_end", JSONObject(), activeConfig, endingSession))
-        flushPendingEvents()
+        sessionConfigReady = false
     }
 
+    /**
+     * Guarantees that an actual newly generated draw cannot race ahead of first-install or stale
+     * treatment resolution. If startSession() is already resolving the config, this call waits on
+     * the same mutex instead of issuing a second request.
+     */
+    suspend fun ensureConfigReadyForDraw() {
+        ensureConfigReadyForSession()
+    }
+
+    /** Force-refresh entry point kept for explicit maintenance/debug flows. */
     suspend fun refreshRemoteConfig() {
+        configMutex.withLock {
+            fetchRemoteConfig()
+            sessionConfigReady = true
+        }
+    }
+
+    private suspend fun ensureConfigReadyForSession() {
+        configMutex.withLock {
+            if (sessionConfigReady) return@withLock
+            if (!hasFreshCachedConfig()) {
+                fetchRemoteConfig()
+            }
+            sessionConfigReady = true
+        }
+    }
+
+    private suspend fun fetchRemoteConfig() {
         if (BuildConfig.REMOTE_CONFIG_URL.isBlank()) return
         val response = runCatching {
             withContext(Dispatchers.IO) {
@@ -152,6 +187,15 @@ class ResearchManager(
         }
     }
 
+    private fun hasFreshCachedConfig(): Boolean {
+        val raw = preferences.getString(KEY_CACHED_CONFIG, null) ?: return false
+        val savedAt = preferences.getLong(KEY_CACHED_CONFIG_AT, 0L)
+        if (savedAt <= 0L) return false
+        val age = System.currentTimeMillis() - savedAt
+        if (age !in 0L..CONFIG_CACHE_TTL_MILLIS) return false
+        return runCatching { ExperimentConfigCodec.decode(raw) }.isSuccess
+    }
+
     private fun loadCachedConfig(): ResolvedExperimentConfig {
         val raw = preferences.getString(KEY_CACHED_CONFIG, null)
         return raw?.let { runCatching { ExperimentConfigCodec.decode(it) }.getOrNull() }
@@ -215,5 +259,6 @@ class ResearchManager(
         private const val KEY_INSTALLATION_ID = "installation_id"
         private const val KEY_CACHED_CONFIG = "cached_remote_config_json"
         private const val KEY_CACHED_CONFIG_AT = "cached_remote_config_saved_at"
+        private const val CONFIG_CACHE_TTL_MILLIS = 60L * 60L * 1_000L
     }
 }
