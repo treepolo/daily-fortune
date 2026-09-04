@@ -10,6 +10,7 @@
 - [x] AdMob App ID：`ca-app-pub-8284304703726644~2628433223`。
 - [x] Rewarded ad unit：`ca-app-pub-8284304703726644/9731073792`。
 - [x] Production Remote Config 預設 `ads.enabled=false`。
+- [x] 「逆天改命!!」流程固定為：按按鈕 → 先完成 rewarded/bypass gate → 才回籤筒 → 使用者親手抽出新籤 → 新命數落定。
 - [x] 大吉（overall score 7）廣告 bypass policy 已預留。
 - [x] Debug/QA 強制 Google 官方測試 rewarded ad unit，避免誤打正式廣告流量。
 - [x] 廣告載入／顯示／完成／失敗／reroll unlock telemetry。
@@ -65,9 +66,9 @@ CI 已預留四個 GitHub Actions secrets：
 4. 離線啟動、離線抽籤、關 App、恢復網路後 telemetry 補傳。
 5. Remote Config cache TTL 與更新後 config_id 改變。
 6. Ads OFF：完全維持目前體驗，不載入／顯示廣告。
-7. Ads ON + debug：只出 Google 測試 rewarded ad。
-8. Ads ON + 大吉：bypass 廣告。
-9. Ads ON + rewarded 完成：reroll 解鎖且 telemetry 完整。
+7. Ads ON + debug：按「逆天改命!!」當下先出 Google 測試 rewarded ad；完成後才回籤筒。
+8. Ads ON + 大吉：按「逆天改命!!」後直接 bypass 廣告並回籤筒。
+9. Ads ON + rewarded 完成：只解鎖 reroll 流程，不直接產生新命數；仍須親手抽籤，且 telemetry 完整。
 10. Ads ON + no-fill / timeout / 斷網：依 `FAIL_OPEN` / `FAIL_CLOSED` policy 正確處理。
 11. 舊 QA 版升級安裝到新 QA APK：簽章／versionCode 可正常升級。
 12. Play AAB 簽章：正式上架前確認 upload key，而非 repo debug key。
