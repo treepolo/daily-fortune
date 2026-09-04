@@ -5,6 +5,7 @@ import com.treepolo.dailyfortune.data.local.DailyFortuneDatabase
 import com.treepolo.dailyfortune.data.local.LocalDailyFortuneStateEntity
 import com.treepolo.dailyfortune.data.local.LocalFortuneDao
 import com.treepolo.dailyfortune.data.local.LocalFortuneDrawEntity
+import com.treepolo.dailyfortune.model.AdsConfig
 import com.treepolo.dailyfortune.model.DrawType
 import com.treepolo.dailyfortune.model.FortuneDomain
 import com.treepolo.dailyfortune.model.FortuneDraw
@@ -36,6 +37,17 @@ class LocalFortuneRepository(
     suspend fun refreshExperimentConfig() = research.refreshRemoteConfig()
 
     suspend fun flushResearchEvents() = research.flushPendingEvents()
+
+    fun currentAdsConfig(): AdsConfig = research.currentConfig().ads
+
+    suspend fun ensureAdsConfigReady(): AdsConfig {
+        research.ensureConfigReadyForDraw()
+        return research.currentConfig().ads
+    }
+
+    suspend fun recordResearchEvent(eventName: String, payload: JSONObject = JSONObject()) {
+        research.enqueueEvent(eventName, payload)
+    }
 
     suspend fun snapshot(date: LocalDate): FortuneRepositorySnapshot {
         val state = dao.getDailyState(date.toString()) ?: return FortuneRepositorySnapshot(null)
