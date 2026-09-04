@@ -142,7 +142,9 @@ fun DailyFortuneRoot(viewModel: FortuneViewModel) {
             DailyFortuneScreen(
                 state = state,
                 onInitialDraw = viewModel::drawToday,
-                onReroll = viewModel::defyFate,
+                onRerollRequest = viewModel::requestDefyFate,
+                onRerollDraw = viewModel::defyFate,
+                onRerollUnlockConsumed = viewModel::consumeRerollUnlock,
             )
         }
     }
@@ -152,7 +154,9 @@ fun DailyFortuneRoot(viewModel: FortuneViewModel) {
 private fun DailyFortuneScreen(
     state: FortuneUiState,
     onInitialDraw: () -> Unit,
-    onReroll: () -> Unit,
+    onRerollRequest: () -> Unit,
+    onRerollDraw: () -> Unit,
+    onRerollUnlockConsumed: () -> Unit,
 ) {
     val haptics = LocalHapticFeedback.current
     var stage by remember { mutableStateOf(RitualStage.INITIALIZING) }
@@ -201,12 +205,19 @@ private fun DailyFortuneScreen(
         stage = RitualStage.DRAW
     }
 
+    LaunchedEffect(state.rerollUnlocked) {
+        if (state.rerollUnlocked) {
+            armReroll()
+            onRerollUnlockConsumed()
+        }
+    }
+
     fun commitStickPull() {
         if (stage != RitualStage.DRAW) return
         ritualNonce += 1
         requestBaseId = state.currentDraw?.id
         stage = RitualStage.SUSPENSE
-        if (rerollFlow) onReroll() else onInitialDraw()
+        if (rerollFlow) onRerollDraw() else onInitialDraw()
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
@@ -239,6 +250,7 @@ private fun DailyFortuneScreen(
                             draw = draw,
                             progress = paperProgress,
                             completed = paperCompleted,
+                            rerollRequestInProgress = state.rerollGateInProgress,
                             onProgress = { paperProgress = it },
                             onCompleted = {
                                 paperProgress = 1f
@@ -247,7 +259,7 @@ private fun DailyFortuneScreen(
                                 pendingDraw = null
                                 haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                             },
-                            onReroll = ::armReroll,
+                            onReroll = onRerollRequest,
                         )
                     }
                 }
@@ -775,6 +787,7 @@ private fun PaperStage(
     draw: FortuneDraw,
     progress: Float,
     completed: Boolean,
+    rerollRequestInProgress: Boolean,
     onProgress: (Float) -> Unit,
     onCompleted: () -> Unit,
     onReroll: () -> Unit,
@@ -804,6 +817,7 @@ private fun PaperStage(
             Spacer(modifier = Modifier.height(18.dp))
             Button(
                 onClick = onReroll,
+                enabled = !rerollRequestInProgress,
                 modifier = Modifier
                     .fillMaxWidth(0.78f)
                     .widthIn(max = 280.dp)
@@ -816,7 +830,7 @@ private fun PaperStage(
                 ),
             ) {
                 Text(
-                    text = "逆天改命!!",
+                    text = if (rerollRequestInProgress) "準備逆天改命……" else "逆天改命!!",
                     fontFamily = KaiFont,
                     fontSize = 20.sp,
                     fontWeight = FontWeight.Normal,
