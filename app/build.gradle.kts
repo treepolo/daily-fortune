@@ -162,5 +162,6 @@ dependencies {
     implementation(libs.google.mobile.ads)
     implementation(libs.google.ump)
 
+    testImplementation(libs.json.jvm)
     testImplementation(libs.junit)
 }
